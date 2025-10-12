@@ -21,7 +21,7 @@ const checkStatusBtn = document.getElementById('checkStatusBtn');
 const statusPrintId = document.getElementById('statusPrintId');
 const statusResult = document.getElementById('statusResult');
 
-const API_BASE = '' // If hosting server root+path, set here (e.g. https://your-render-app.com)
+const API_BASE = 'https://gtmchmkgjtsowgwrasye.supabase.co/functions/v1' // If hosting server root+path, set here (e.g. https://your-render-app.com)
 
 function getSelectedValue(name){
   const el = document.querySelector(`input[name="${name}"]:checked`);
