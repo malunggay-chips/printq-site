@@ -1,6 +1,6 @@
-// ===============================
-// app.js — Updated October 2025
-// ===============================
+// app.js
+
+import { API_BASE } from "./config.js";
 
 // ====== ELEMENTS ======
 const calcBtn = document.getElementById("calcBtn");
@@ -14,14 +14,20 @@ const locationRow = document.getElementById("locationRow");
 const locationInput = document.getElementById("location");
 const calcResult = document.getElementById("calcResult");
 
-// Status section
+// Popup and status section
+const popup = document.getElementById("popup");
+const printIdText = document.getElementById("printIdText");
+const copyBtn = document.getElementById("copyBtn");
+const closePopupBtn = document.getElementById("closePopupBtn");
+
 const statusSection = document.getElementById("status-section");
+const showStatusSectionBtn = document.getElementById("showStatusSection");
 const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
 
-// ====== API BASE ======
-const API_BASE = "https://gtmchmkgjtsowgwrasye.supabase.co/functions/v1"; // Your Supabase Edge Function base URL
+let lastPrintId = null;
+let lastAmount = 0;
 
 // ====== HELPERS ======
 function getSelectedValue(name) {
@@ -45,10 +51,8 @@ function calculatePrice() {
 }
 
 // ====== EVENT LISTENERS ======
-
-// Toggle delivery location field
 document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
-  r.addEventListener("change", (e) => {
+  r.addEventListener("change", () => {
     const v = getSelectedValue("fulfill");
     if (v === "delivery") {
       locationRow.classList.remove("hidden");
@@ -61,7 +65,7 @@ document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   });
 });
 
-// Calculate total price
+// ====== Calculate button ======
 calcBtn.addEventListener("click", () => {
   const amount = calculatePrice();
   if (amount === null) {
@@ -71,7 +75,7 @@ calcBtn.addEventListener("click", () => {
   calcResult.textContent = `Total: ₱${amount}`;
 });
 
-// ====== MAIN UPLOAD + CREATE PRINT ======
+// ====== Upload + Create Print ======
 uploadPayBtn.addEventListener("click", async () => {
   const files = filesInput.files;
   const name = nameInput.value.trim();
@@ -89,12 +93,11 @@ uploadPayBtn.addEventListener("click", async () => {
 
   const amount = calculatePrice();
   if (!amount) {
-    alert("Please calculate the price first.");
+    alert("Please calculate price first.");
     return;
   }
 
   try {
-    // Prepare FormData
     const formData = new FormData();
     formData.append("name", name);
     formData.append("phone", phone);
@@ -106,30 +109,59 @@ uploadPayBtn.addEventListener("click", async () => {
     formData.append("amount", amount);
     for (const file of files) formData.append("files", file);
 
-    // Send request to Supabase Edge Function
     const resp = await fetch(`${API_BASE}/createPrint`, {
       method: "POST",
       body: formData
     });
 
-    // Safely parse JSON
-    const data = await resp.json().catch(() => ({}));
-    console.log("🧠 Server Response:", data);
+    if (!resp.ok) throw new Error("Failed to create print.");
+    const data = await resp.json();
 
-    if (resp.ok && data?.success && data?.print_id) {
-      // ✅ Show popup with print ID
-      showPrintIdPopup(data.print_id);
-    } else {
-      console.error("⚠️ Unexpected response:", data);
-      alert("There was a problem creating your print. Please try again.");
-    }
-  } catch (error) {
-    console.error("❌ Network or parsing error:", error);
-    alert("Network error — please check your connection and try again.");
+    if (!data || !data.print_id) throw new Error("Invalid response from server.");
+
+    // ✅ Success: show popup
+    lastPrintId = data.print_id;
+    lastAmount = amount;
+    printIdText.textContent = data.print_id;
+    popup.classList.remove("hidden");
+  } catch (err) {
+    console.error("❌ Error:", err);
+    alert("Network error - please check your connection and try again.");
   }
 });
 
-// ====== CHECK STATUS SECTION ======
+// ====== Popup Actions ======
+copyBtn.addEventListener("click", () => {
+  navigator.clipboard.writeText(printIdText.textContent);
+  alert("Print ID copied!");
+});
+
+closePopupBtn.addEventListener("click", async () => {
+  popup.classList.add("hidden");
+
+  if (!lastPrintId || !lastAmount) return;
+
+  // 🧾 Create PayMongo checkout
+  try {
+    const resp = await fetch(`${API_BASE}/createCheckout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ print_id: lastPrintId, amount: lastAmount }),
+    });
+
+    const data = await resp.json();
+    if (data?.checkout_url) {
+      window.location.href = data.checkout_url; // redirect to PayMongo checkout
+    } else {
+      alert("Failed to start checkout session.");
+    }
+  } catch (err) {
+    console.error("❌ Error starting checkout:", err);
+    alert("Unable to start checkout. Please try again.");
+  }
+});
+
+// ====== Check Print Status ======
 checkStatusBtn.addEventListener("click", async () => {
   const printId = statusPrintId.value.trim();
   if (!printId) {
@@ -147,42 +179,18 @@ checkStatusBtn.addEventListener("click", async () => {
     if (!resp.ok) throw new Error("Failed to fetch status.");
 
     const data = await resp.json();
-    statusResult.textContent = `Status: ${data.status || "Unknown"}`;
+    if (data.success) {
+      statusResult.innerHTML = `
+        <strong>Print Code:</strong> ${data.print_code}<br>
+        <strong>Payment Status:</strong> ${data.payment_stat}<br>
+        <strong>Print Status:</strong> ${data.print_status}<br>
+        <strong>Notification:</strong> ${data.notification}
+      `;
+    } else {
+      statusResult.textContent = data.error || "No record found.";
+    }
   } catch (err) {
     console.error(err);
     statusResult.textContent = "Error checking status.";
   }
 });
-
-// ====== POPUP CREATOR ======
-function showPrintIdPopup(printId) {
-  const popup = document.createElement("div");
-  popup.classList.add("popup-overlay");
-  popup.innerHTML = `
-    <div class="popup-box">
-      <h2>✅ Print Created!</h2>
-      <p>Your unique print ID:</p>
-      <div class="print-id-box">
-        <span id="printIdText">${printId}</span>
-        <button id="copyPrintId">Copy</button>
-      </div>
-      <button id="closePopup">Close</button>
-    </div>
-  `;
-  document.body.appendChild(popup);
-
-  // Copy button
-  document.getElementById("copyPrintId").addEventListener("click", () => {
-    navigator.clipboard.writeText(printId);
-    alert("Print ID copied!");
-  });
-
-  // Close button
-  document.getElementById("closePopup").addEventListener("click", () => {
-    popup.remove();
-
-    // 💳 (NEXT UPDATE) Redirect to PayMongo checkout here
-    // Example placeholder:
-    // window.open(checkoutUrlFromServer, "_blank");
-  });
-}
