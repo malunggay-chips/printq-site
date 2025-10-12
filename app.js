@@ -1,193 +1,169 @@
 // app.js
-const calcBtn = document.getElementById('calcBtn');
-const uploadPayBtn = document.getElementById('uploadPayBtn');
-const filesInput = document.getElementById('files');
-const nameInput = document.getElementById('name');
-const phoneInput = document.getElementById('phone');
-const pagesInput = document.getElementById('pages');
-const copiesInput = document.getElementById('copies');
-const locationRow = document.getElementById('locationRow');
-const locationInput = document.getElementById('location');
-const calcResult = document.getElementById('calcResult');
 
-const popup = document.getElementById('popup');
-const printIdText = document.getElementById('printIdText');
-const copyBtn = document.getElementById('copyBtn');
-const closePopupBtn = document.getElementById('closePopupBtn');
+// ====== ELEMENTS ======
+const calcBtn = document.getElementById("calcBtn");
+const uploadPayBtn = document.getElementById("uploadPayBtn");
+const filesInput = document.getElementById("files");
+const nameInput = document.getElementById("name");
+const phoneInput = document.getElementById("phone");
+const pagesInput = document.getElementById("pages");
+const copiesInput = document.getElementById("copies");
+const locationRow = document.getElementById("locationRow");
+const locationInput = document.getElementById("location");
+const calcResult = document.getElementById("calcResult");
 
-const statusSection = document.getElementById('status-section');
-const showStatusSectionBtn = document.getElementById('showStatusSection');
-const checkStatusBtn = document.getElementById('checkStatusBtn');
-const statusPrintId = document.getElementById('statusPrintId');
-const statusResult = document.getElementById('statusResult');
+// Popup and status section
+const popup = document.getElementById("popup");
+const printIdText = document.getElementById("printIdText");
+const copyBtn = document.getElementById("copyBtn");
+const closePopupBtn = document.getElementById("closePopupBtn");
 
-const API_BASE = 'https://gtmchmkgjtsowgwrasye.supabase.co/functions/v1' // If hosting server root+path, set here (e.g. https://your-render-app.com)
+const statusSection = document.getElementById("status-section");
+const showStatusSectionBtn = document.getElementById("showStatusSection");
+const checkStatusBtn = document.getElementById("checkStatusBtn");
+const statusPrintId = document.getElementById("statusPrintId");
+const statusResult = document.getElementById("statusResult");
 
-function getSelectedValue(name){
+// ====== API BASE ======
+const API_BASE = "https://gtmchmkgjtsowgwrasye.supabase.co/functions/v1"; // Supabase Edge Functions URL
+
+// ====== HELPERS ======
+function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
 }
 
-document.querySelectorAll('input[name="fulfill"]').forEach(r=>{
-  r.addEventListener('change', ()=> {
-    const v = getSelectedValue('fulfill');
-    if(v === 'delivery'){
-      locationRow.classList.remove('hidden');
+function calculatePrice() {
+  const pages = Number(pagesInput.value) || 0;
+  const copies = Number(copiesInput.value) || 0;
+  const color = getSelectedValue("color");
+  const fulfill = getSelectedValue("fulfill");
+
+  if (pages <= 0 || copies <= 0) return null;
+
+  let per = color === "color" ? 10 : 5;
+  let amount = pages * copies * per;
+  if (fulfill === "delivery") amount += 20;
+
+  return amount;
+}
+
+// ====== EVENT LISTENERS ======
+document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
+  r.addEventListener("change", (e) => {
+    const v = getSelectedValue("fulfill");
+    if (v === "delivery") {
+      locationRow.classList.remove("hidden");
       locationInput.required = true;
     } else {
-      locationRow.classList.add('hidden');
+      locationRow.classList.add("hidden");
       locationInput.required = false;
-      locationInput.value = '';
+      locationInput.value = "";
     }
   });
 });
 
-function calculatePrice(){
-  const pages = Number(pagesInput.value) || 0;
-  const copies = Number(copiesInput.value) || 0;
-  const color = getSelectedValue('color'); // bw or color
-  const fulfill = getSelectedValue('fulfill');
-  if(pages <=0 || copies <=0) return null;
-  const per = color==='color' ? 10 : 5;
-  let amount = pages * copies * per;
-  if(fulfill === 'delivery') amount += 20;
-  return amount;
-}
-
-calcBtn.addEventListener('click', (e)=>{
-  e.preventDefault();
+// Calculate button
+calcBtn.addEventListener("click", () => {
   const amount = calculatePrice();
-  if(amount === null){
-    calcResult.textContent = 'Please fill pages and copies.';
-    uploadPayBtn.disabled = true;
+  if (amount === null) {
+    calcResult.textContent = "Please fill in valid values for pages and copies.";
     return;
   }
-  calcResult.textContent = `Estimated total: ₱ ${amount.toFixed(2)}`;
-  uploadPayBtn.disabled = false;
+  calcResult.textContent = `Total: ₱${amount}`;
 });
 
-document.getElementById('printForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  uploadPayBtn.disabled = true;
-  uploadPayBtn.textContent = 'Uploading...';
+// ====== MAIN: Upload + Create Print ======
+uploadPayBtn.addEventListener("click", async () => {
+  const files = filesInput.files;
+  const name = nameInput.value.trim();
+  const phone = phoneInput.value.trim();
+  const pages = pagesInput.value;
+  const copies = copiesInput.value;
+  const color = getSelectedValue("color");
+  const fulfill = getSelectedValue("fulfill");
+  const location = locationInput.value.trim();
 
-  // validate required
-  if(!filesInput.files.length){
-    alert('Please attach at least one file.');
-    uploadPayBtn.disabled = false;
-    uploadPayBtn.textContent = 'Upload & Pay';
-    return;
-  }
-  if(!nameInput.value || !phoneInput.value){
-    alert('Please provide name and phone.');
-    uploadPayBtn.disabled = false;
-    uploadPayBtn.textContent = 'Upload & Pay';
-    return;
-  }
-  if(getSelectedValue('fulfill') === 'delivery' && !locationInput.value){
-    alert('Delivery location required.');
-    uploadPayBtn.disabled = false;
-    uploadPayBtn.textContent = 'Upload & Pay';
+  if (!files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
+    alert("Please fill out all required fields and upload at least one file.");
     return;
   }
 
+  // Calculate total price
   const amount = calculatePrice();
-  if(amount === null){
-    alert('Please calculate price first.');
-    uploadPayBtn.disabled = false;
-    uploadPayBtn.textContent = 'Upload & Pay';
+  if (!amount) {
+    alert("Please calculate price first.");
     return;
   }
 
-  // Build multipart form data
-  const fd = new FormData();
-  for(const f of filesInput.files) fd.append('files', f);
-  fd.append('name', nameInput.value);
-  fd.append('phone', phoneInput.value);
-  fd.append('pages', pagesInput.value);
-  fd.append('copies', copiesInput.value);
-  fd.append('color', getSelectedValue('color'));
-  fd.append('fulfill', getSelectedValue('fulfill'));
-  fd.append('location', locationInput.value || '');
-  fd.append('amount', amount); // pass to server
+  try {
+    // Prepare FormData
+    const formData = new FormData();
+    formData.append("name", name);
+    formData.append("phone", phone);
+    formData.append("pages", pages);
+    formData.append("copies", copies);
+    formData.append("color", color);
+    formData.append("fulfill", fulfill);
+    formData.append("location", location);
+    formData.append("amount", amount);
 
-  try{
-    const res = await fetch(API_BASE + '/api/create-print', {
-      method: 'POST',
-      body: fd
+    for (const file of files) {
+      formData.append("files", file);
+    }
+
+    // Create print record via Supabase Edge Function
+    const resp = await fetch(`${API_BASE}/createPrint`, {
+      method: "POST",
+      body: formData,
     });
-    if(!res.ok) throw new Error('Server error while creating print.');
-    const data = await res.json();
-    // data should contain { printId, amount, recordId }
-    printIdText.textContent = data.printId;
-    popup.classList.remove('hidden');
 
-    // Close popup manually — only after close we redirect to checkout
-    closePopupBtn.onclick = async () => {
-      popup.classList.add('hidden');
-      // now create checkout
-      const email = prompt('Please enter your email for the payment receipt:');
-      if(!email){
-        alert('Email required for payment.');
-        return;
-      }
-      // call create-checkout to get checkout URL
-      const ck = await fetch(API_BASE + '/api/create-checkout', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          printId: data.printId,
-          amount: data.amount,
-          email
-        })
-      });
-      if(!ck.ok){
-        const t = await ck.text();
-        alert('Failed to create checkout: '+t);
-        return;
-      }
-      const ckData = await ck.json();
-      // ckData.checkout_url should be returned
-      window.location.href = ckData.checkout_url;
-    };
-  }catch(err){
+    if (!resp.ok) throw new Error("Failed to create print.");
+
+    const data = await resp.json();
+    const printId = data.print_id || data.id || "Print-0000";
+
+    // Show popup
+    printIdText.textContent = printId;
+    popup.classList.remove("hidden");
+
+  } catch (err) {
     console.error(err);
-    alert('Error: '+err.message);
-    uploadPayBtn.disabled = false;
-    uploadPayBtn.textContent = 'Upload & Pay';
+    alert("There was a problem creating your print. Please try again.");
   }
 });
 
-copyBtn.addEventListener('click', ()=>{
-  const txt = printIdText.textContent;
-  navigator.clipboard?.writeText(txt).then(()=> {
-    copyBtn.textContent = 'Copied';
-    setTimeout(()=> copyBtn.textContent = 'Copy', 1500);
-  }).catch(()=> alert('Copy failed'));
+// ====== POPUP ACTIONS ======
+copyBtn.addEventListener("click", () => {
+  navigator.clipboard.writeText(printIdText.textContent);
+  alert("Print ID copied!");
 });
 
-showStatusSectionBtn.addEventListener('click', ()=>{
-  statusSection.classList.toggle('hidden');
-  statusSection.classList.toggle('active');
-  window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'});
+closePopupBtn.addEventListener("click", () => {
+  popup.classList.add("hidden");
 });
 
-checkStatusBtn.addEventListener('click', async ()=>{
-  const pid = statusPrintId.value.trim();
-  if(!pid){ statusResult.textContent = 'Enter a Print ID.'; return; }
-  statusResult.textContent = 'Fetching...';
-  try{
-    const r = await fetch(API_BASE + '/api/get-status?printId=' + encodeURIComponent(pid));
-    if(!r.ok){ statusResult.textContent = 'Not found or server error.'; return; }
-    const d = await r.json();
-    // render result
-    statusResult.innerHTML = `
-      <p><strong>Print code:</strong> ${d.print_code || '—'}</p>
-      <p><strong>Payment status:</strong> ${d.payment_status}</p>
-      <p><strong>Print status:</strong> ${d.print_status}</p>
-      <p><strong>Notification:</strong> ${d.notification || '—'}</p>
-    `;
-  }catch(err){
-    statusResult.textContent = 'Error: '+err.message;
+// ====== CHECK STATUS SECTION ======
+checkStatusBtn.addEventListener("click", async () => {
+  const printId = statusPrintId.value.trim();
+  if (!printId) {
+    alert("Enter a valid Print ID.");
+    return;
+  }
+
+  try {
+    const resp = await fetch(`${API_BASE}/checkStatus`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printId }),
+    });
+
+    if (!resp.ok) throw new Error("Failed to fetch status.");
+
+    const data = await resp.json();
+    statusResult.textContent = `Status: ${data.status || "Unknown"}`;
+  } catch (err) {
+    console.error(err);
+    statusResult.textContent = "Error checking status.";
   }
 });
