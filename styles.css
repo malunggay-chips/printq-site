@@ -1,67 +1,228 @@
-:root{
-  --blue:#0b63d8;
-  --light-blue:#eaf3ff;
-  --white:#ffffff;
-  --gray:#6b7280;
-  --card-shadow: 0 6px 20px rgba(11,99,216,0.08);
-  --radius:10px;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+/* ========== General Reset ========== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Poppins", Arial, sans-serif;
 }
 
-*{box-sizing:border-box}
-body{
-  margin:0;
-  background:var(--light-blue);
-  color:#0b1724;
-  min-height:100vh;
-  display:flex;
-  flex-direction:column;
+/* ========== Page Layout ========== */
+body {
+  background: #f3f7fc;
+  color: #222;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
-.container{max-width:900px;margin:0 auto;padding:24px}
-
-.site-header{
-  background:var(--blue);
-  color:var(--white);
-  padding:18px 0;
-}
-.site-header h1{margin:0;font-size:22px}
-.site-header .tag{margin:4px 0 0;font-size:13px;opacity:.95}
-
-.card{
-  background:var(--white);
-  border-radius:var(--radius);
-  padding:20px;
-  margin-top:20px;
-  box-shadow:var(--card-shadow);
+/* ========== Header ========== */
+header {
+  background-color: #007bff;
+  color: white;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.hidden{display:none}
-.active{display:block}
-
-.row{display:flex;flex-direction:row;gap:12px;align-items:center;margin:12px 0;flex-wrap:wrap}
-.row .label{min-width:180px;color:var(--blue);font-weight:600}
-label.row input[type="text"], label.row input[type="tel"], label.row input[type="number"], label.row input[type="file"] , label.row input[type="email"]{
-  flex:1;padding:10px;border:1px solid #e6eefb;border-radius:8px;
+header h1 {
+  font-size: 1.8rem;
+  margin-bottom: 0.3rem;
 }
 
-.btn{padding:10px 14px;border-radius:8px;border:0;cursor:pointer}
-.btn.primary{background:var(--blue);color:var(--white)}
-.btn.secondary{background:#eef6ff;border:1px solid var(--blue);color:var(--blue)}
-.btn.tiny{padding:6px 8px;font-size:13px}
-.link-btn{background:none;border:0;color:var(--white);text-decoration:underline;cursor:pointer}
+header p {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
 
-.radio-row label{margin-right:12px}
-.calc-result{margin-top:8px;padding:10px;border-radius:8px;background:#f7fbff;color:var(--blue);font-weight:600}
-.popup{position:fixed;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,0.45)}
-.popup-card{background:var(--white);padding:20px;border-radius:10px;min-width:320px;box-shadow:0 20px 60px rgba(2,6,23,0.2)}
-.print-id-row{display:flex;gap:8px;align-items:center;margin:10px 0}
-code{background:#f1f5f9;padding:6px 8px;border-radius:6px;color:#0b1724}
+/* ========== Main Content ========== */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1rem;
+}
 
-.site-footer{background:var(--blue);color:var(--white);padding:14px 0;margin-top:auto}
-.footer-inner{display:flex;justify-content:space-between;align-items:center;max-width:900px;margin:0 auto;padding:0 24px}
+/* ========== Form Sections ========== */
+.form-section {
+  background: white;
+  width: 100%;
+  max-width: 420px;
+  padding: 1.5rem 2rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+  text-align: left;
+}
 
-@media (max-width:640px){
-  .row{flex-direction:column;align-items:stretch}
-  .row .label{min-width:unset}
+.form-section h2 {
+  text-align: center;
+  margin-bottom: 1rem;
+  color: #007bff;
+}
+
+label {
+  display: block;
+  margin-top: 0.8rem;
+  margin-bottom: 0.2rem;
+  font-weight: 500;
+  color: #333;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="tel"],
+input[type="file"],
+select {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+  background-color: #fafafa;
+  transition: border-color 0.3s;
+}
+
+input:focus {
+  border-color: #007bff;
+  outline: none;
+  background-color: #fff;
+}
+
+input[type="radio"] {
+  margin-right: 5px;
+}
+
+button {
+  display: block;
+  width: 100%;
+  padding: 0.8rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+#calcResult {
+  text-align: center;
+  margin-top: 0.5rem;
+  font-weight: 500;
+}
+
+/* ========== Popup Styling ========== */
+.popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+}
+
+.popup.hidden {
+  display: none;
+}
+
+.popup-content {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.3);
+  width: 90%;
+  max-width: 320px;
+  animation: fadeIn 0.25s ease;
+}
+
+.print-id-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin: 0.5rem 0 1rem;
+}
+
+#printIdText {
+  background: #f3f7fc;
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  font-weight: 600;
+  border: 1px solid #ddd;
+}
+
+#copyBtn {
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+#copyBtn:hover {
+  background: #0056b3;
+}
+
+.close-btn {
+  background: #007bff;
+  color: white;
+  padding: 0.7rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* ========== Footer ========== */
+footer {
+  background-color: #007bff;
+  color: white;
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.85rem;
+  margin-top: auto;
+}
+
+/* ========== Utility ========== */
+.hidden {
+  display: none;
+}
+
+/* ========== Animations ========== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ========== Responsive ========== */
+@media (max-width: 480px) {
+  .form-section {
+    padding: 1rem 1.3rem;
+  }
+
+  header h1 {
+    font-size: 1.5rem;
+  }
+
+  button {
+    font-size: 0.95rem;
+  }
 }
