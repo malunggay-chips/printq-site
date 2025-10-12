@@ -226,3 +226,36 @@ footer {
     font-size: 0.95rem;
   }
 }
+
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.popup-box {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  width: 320px;
+}
+
+.print-id-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  background: #f3f3f3;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+#printIdText {
+  font-weight: bold;
+}
