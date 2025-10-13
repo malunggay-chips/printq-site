@@ -1,7 +1,6 @@
-// app.js
+// js/app.js
 import { API_BASE } from "./config.js";
 
-// ====== ELEMENTS ======
 const calcBtn = document.getElementById("calcBtn");
 const uploadPayBtn = document.getElementById("uploadPayBtn");
 const filesInput = document.getElementById("files");
@@ -22,7 +21,7 @@ const statusPrintId = document.getElementById("statusPrintId");
 const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusResult = document.getElementById("statusResult");
 
-// ====== HELPERS ======
+// Helpers
 function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
@@ -33,21 +32,17 @@ function calculatePrice() {
   const copies = Number(copiesInput.value) || 0;
   const color = getSelectedValue("color");
   const fulfill = getSelectedValue("fulfill");
-
   if (pages <= 0 || copies <= 0) return null;
-
   let per = color === "color" ? 10 : 5;
   let amount = pages * copies * per;
   if (fulfill === "delivery") amount += 20;
-
   return amount;
 }
 
-// ====== EVENT LISTENERS ======
-document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
-  r.addEventListener("change", (e) => {
-    const v = getSelectedValue("fulfill");
-    if (v === "delivery") {
+// Show/hide location
+document.querySelectorAll('input[name="fulfill"]').forEach(r => {
+  r.addEventListener("change", () => {
+    if (getSelectedValue("fulfill") === "delivery") {
       locationRow.classList.remove("hidden");
       locationInput.required = true;
     } else {
@@ -58,19 +53,18 @@ document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   });
 });
 
-// Calculate button
+// Calculate
 calcBtn.addEventListener("click", () => {
-  const amount = calculatePrice();
-  if (amount === null) {
-    calcResult.textContent = "Please fill in valid values for pages and copies.";
+  const amt = calculatePrice();
+  if (amt === null) {
+    calcResult.textContent = "Please enter valid pages & copies.";
     return;
   }
-  calcResult.textContent = `Total: ₱${amount}`;
+  calcResult.textContent = `Total: ₱${amt}`;
 });
 
-// ====== UPLOAD + CREATE PRINT ======
+// Upload & Pay
 uploadPayBtn.addEventListener("click", async () => {
-  const files = filesInput.files;
   const name = nameInput.value.trim();
   const phone = phoneInput.value.trim();
   const pages = pagesInput.value;
@@ -79,19 +73,18 @@ uploadPayBtn.addEventListener("click", async () => {
   const fulfill = getSelectedValue("fulfill");
   const location = locationInput.value.trim();
 
-  if (!files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
-    alert("Please fill out all required fields and upload at least one file.");
+  if (!filesInput.files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
+    alert("Please complete all fields and upload at least one file.");
     return;
   }
 
   const amount = calculatePrice();
   if (!amount) {
-    alert("Please calculate price first.");
+    alert("Calculate the price first.");
     return;
   }
 
   try {
-    // Build form data
     const formData = new FormData();
     formData.append("name", name);
     formData.append("phone", phone);
@@ -101,79 +94,79 @@ uploadPayBtn.addEventListener("click", async () => {
     formData.append("fulfill", fulfill);
     formData.append("location", location);
     formData.append("amount", amount);
-
-    for (const file of files) {
-      formData.append("files", file);
+    for (const f of filesInput.files) {
+      formData.append("files", f);
     }
 
-    // Send to createPrint
     const resp = await fetch(`${API_BASE}/createPrint`, {
       method: "POST",
       body: formData,
     });
 
     const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || "Failed to create print");
+    if (!resp.ok) throw new Error(data.error || "createPrint failed");
 
-    const printId = data.print_id || "Unknown";
-    printIdText.textContent = printId;
+    const pid = data.print_id || "Unknown";
+    printIdText.textContent = pid;
     popup.classList.remove("hidden");
 
-    // Create checkout
-    const checkoutResp = await fetch(`${API_BASE}/createCheckout`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printId, amount, name }),
+    // after popup, redirect to PayMongo
+    closePopupBtn.addEventListener("click", async () => {
+      popup.classList.add("hidden");
+
+      try {
+        const coResp = await fetch(`${API_BASE}/createCheckout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ print_id: pid, amount, name }),
+        });
+        const coData = await coResp.json();
+        if (!coResp.ok) throw new Error(coData.error || "createCheckout failed");
+        window.location.href = coData.checkout_url;
+      } catch (err) {
+        console.error("❌ checkout error:", err);
+        alert("Error starting payment. Try again later.");
+      }
     });
 
-    const checkoutData = await checkoutResp.json();
-    if (!checkoutResp.ok) throw new Error(checkoutData.error);
-
-    window.open(checkoutData.checkout_url, "_blank");
   } catch (err) {
-    console.error("❌ Upload error:", err);
-    alert("Network error - please check your connection and try again.");
+    console.error("❌ upload & print error:", err);
+    alert("Network error — please check your connection and try again.");
   }
 });
 
-// ====== POPUP ======
+// Copy Print ID
 copyBtn.addEventListener("click", () => {
   navigator.clipboard.writeText(printIdText.textContent);
-  alert("Print ID copied!");
+  alert("Copied Print ID!");
 });
 
-closePopupBtn.addEventListener("click", () => {
-  popup.classList.add("hidden");
-});
-
-// ====== CHECK STATUS ======
+// Check status
 checkStatusBtn.addEventListener("click", async () => {
-  const printId = statusPrintId.value.trim();
-  if (!printId) {
-    alert("Enter a valid Print ID.");
+  const pid = statusPrintId.value.trim();
+  if (!pid) {
+    alert("Enter Print ID.");
     return;
   }
-
   statusResult.textContent = "Checking status...";
 
   try {
     const resp = await fetch(`${API_BASE}/checkStatus`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printId }),
+      body: JSON.stringify({ print_id: pid }),
     });
-
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || "Failed to fetch status.");
+    const stData = await resp.json();
+    if (!resp.ok) throw new Error(stData.error || "Status check failed");
 
     statusResult.innerHTML = `
-      <p><b>Print Code:</b> ${data.print_code}</p>
-      <p><b>Payment Status:</b> ${data.payment_stat}</p>
-      <p><b>Print Status:</b> ${data.print_status}</p>
-      <p><b>Notification:</b> ${data.notification}</p>
+      <p><strong>Print Code:</strong> ${stData.print_code}</p>
+      <p><strong>Payment Status:</strong> ${stData.payment_stat}</p>
+      <p><strong>Print Status:</strong> ${stData.print_status}</p>
+      <p><strong>Notification:</strong> ${stData.notification}</p>
     `;
   } catch (err) {
-    console.error("❌ Status check error:", err);
+    console.error("❌ status error:", err);
     statusResult.textContent = "Error checking status.";
   }
 });
