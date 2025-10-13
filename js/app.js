@@ -1,8 +1,9 @@
-// app.js
+// js/app.js
 
+// Import configuration
 import { API_BASE } from "./config.js";
 
-// ====== ELEMENTS ======
+// ===== ELEMENTS =====
 const calcBtn = document.getElementById("calcBtn");
 const uploadPayBtn = document.getElementById("uploadPayBtn");
 const filesInput = document.getElementById("files");
@@ -14,22 +15,18 @@ const locationRow = document.getElementById("locationRow");
 const locationInput = document.getElementById("location");
 const calcResult = document.getElementById("calcResult");
 
-// Popup and status section
+// Popup
 const popup = document.getElementById("popup");
 const printIdText = document.getElementById("printIdText");
 const copyBtn = document.getElementById("copyBtn");
 const closePopupBtn = document.getElementById("closePopupBtn");
 
-const statusSection = document.getElementById("status-section");
-const showStatusSectionBtn = document.getElementById("showStatusSection");
+// Status
 const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
 
-let lastPrintId = null;
-let lastAmount = 0;
-
-// ====== HELPERS ======
+// ===== HELPERS =====
 function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
@@ -46,11 +43,12 @@ function calculatePrice() {
   let per = color === "color" ? 10 : 5;
   let amount = pages * copies * per;
   if (fulfill === "delivery") amount += 20;
-
   return amount;
 }
 
-// ====== EVENT LISTENERS ======
+// ===== EVENT HANDLERS =====
+
+// Delivery option toggle
 document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   r.addEventListener("change", () => {
     const v = getSelectedValue("fulfill");
@@ -65,17 +63,17 @@ document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   });
 });
 
-// ====== Calculate button ======
+// Calculate
 calcBtn.addEventListener("click", () => {
   const amount = calculatePrice();
   if (amount === null) {
-    calcResult.textContent = "Please fill in valid values for pages and copies.";
+    calcResult.textContent = "Please enter valid pages and copies.";
     return;
   }
   calcResult.textContent = `Total: ₱${amount}`;
 });
 
-// ====== Upload + Create Print ======
+// Upload & Pay
 uploadPayBtn.addEventListener("click", async () => {
   const files = filesInput.files;
   const name = nameInput.value.trim();
@@ -87,13 +85,13 @@ uploadPayBtn.addEventListener("click", async () => {
   const location = locationInput.value.trim();
 
   if (!files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
-    alert("Please fill out all required fields and upload at least one file.");
+    alert("Please complete all fields and upload at least one file.");
     return;
   }
 
   const amount = calculatePrice();
   if (!amount) {
-    alert("Please calculate price first.");
+    alert("Please calculate the total first.");
     return;
   }
 
@@ -109,63 +107,54 @@ uploadPayBtn.addEventListener("click", async () => {
     formData.append("amount", amount);
     for (const file of files) formData.append("files", file);
 
-    const resp = await fetch(`${API_BASE}/createPrint`, {
-      method: "POST",
-      body: formData
-    });
-
-    if (!resp.ok) throw new Error("Failed to create print.");
+    const resp = await fetch(`${API_BASE}/createPrint`, { method: "POST", body: formData });
+    if (!resp.ok) throw new Error("Failed to create print");
     const data = await resp.json();
+    const printId = data.print_id || "Print-0000";
 
-    if (!data || !data.print_id) throw new Error("Invalid response from server.");
-
-    // ✅ Success: show popup
-    lastPrintId = data.print_id;
-    lastAmount = amount;
-    printIdText.textContent = data.print_id;
+    // Show popup
+    printIdText.textContent = printId;
     popup.classList.remove("hidden");
+
+    // After closing popup → open PayMongo checkout
+    closePopupBtn.onclick = async () => {
+      popup.classList.add("hidden");
+
+      const checkoutResp = await fetch(`${API_BASE}/createCheckout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, print_id: printId, name }),
+      });
+
+      if (!checkoutResp.ok) {
+        alert("Error creating PayMongo session.");
+        return;
+      }
+
+      const checkoutData = await checkoutResp.json();
+      if (checkoutData.checkoutUrl) {
+        window.location.href = checkoutData.checkoutUrl;
+      } else {
+        alert("No checkout URL returned.");
+      }
+    };
   } catch (err) {
-    console.error("❌ Error:", err);
+    console.error(err);
     alert("Network error - please check your connection and try again.");
   }
 });
 
-// ====== Popup Actions ======
+// Copy Print ID
 copyBtn.addEventListener("click", () => {
   navigator.clipboard.writeText(printIdText.textContent);
   alert("Print ID copied!");
 });
 
-closePopupBtn.addEventListener("click", async () => {
-  popup.classList.add("hidden");
-
-  if (!lastPrintId || !lastAmount) return;
-
-  // 🧾 Create PayMongo checkout
-  try {
-    const resp = await fetch(`${API_BASE}/createCheckout`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ print_id: lastPrintId, amount: lastAmount }),
-    });
-
-    const data = await resp.json();
-    if (data?.checkout_url) {
-      window.location.href = data.checkout_url; // redirect to PayMongo checkout
-    } else {
-      alert("Failed to start checkout session.");
-    }
-  } catch (err) {
-    console.error("❌ Error starting checkout:", err);
-    alert("Unable to start checkout. Please try again.");
-  }
-});
-
-// ====== Check Print Status ======
+// Check Status
 checkStatusBtn.addEventListener("click", async () => {
   const printId = statusPrintId.value.trim();
   if (!printId) {
-    alert("Enter a valid Print ID.");
+    alert("Please enter your Print ID.");
     return;
   }
 
@@ -177,18 +166,14 @@ checkStatusBtn.addEventListener("click", async () => {
     });
 
     if (!resp.ok) throw new Error("Failed to fetch status.");
-
     const data = await resp.json();
-    if (data.success) {
-      statusResult.innerHTML = `
-        <strong>Print Code:</strong> ${data.print_code}<br>
-        <strong>Payment Status:</strong> ${data.payment_stat}<br>
-        <strong>Print Status:</strong> ${data.print_status}<br>
-        <strong>Notification:</strong> ${data.notification}
-      `;
-    } else {
-      statusResult.textContent = data.error || "No record found.";
-    }
+
+    statusResult.innerHTML = `
+      <p><b>Print Code:</b> ${data.print_code}</p>
+      <p><b>Payment Status:</b> ${data.payment_stat}</p>
+      <p><b>Print Status:</b> ${data.print_status}</p>
+      <p><b>Notification:</b> ${data.notification}</p>
+    `;
   } catch (err) {
     console.error(err);
     statusResult.textContent = "Error checking status.";
