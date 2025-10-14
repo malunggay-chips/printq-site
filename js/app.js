@@ -1,200 +1,178 @@
-// app.js — FINAL INTEGRATED VERSION (2025)
-// Handles upload → createPrint → PayMongo checkout → status checking.
-
+// js/app.js
 import { API_BASE } from "./config.js";
 
-// ====== ELEMENTS ======
-const calcBtn = document.getElementById("calcBtn");
-const uploadPayBtn = document.getElementById("uploadPayBtn");
-const filesInput = document.getElementById("files");
-const nameInput = document.getElementById("name");
-const phoneInput = document.getElementById("phone");
-const pagesInput = document.getElementById("pages");
-const copiesInput = document.getElementById("copies");
-const locationRow = document.getElementById("locationRow");
-const locationInput = document.getElementById("location");
-const calcResult = document.getElementById("calcResult");
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("printForm");
+  const calcBtn = document.getElementById("calcBtn");
+  const uploadPayBtn = document.getElementById("uploadPayBtn");
+  const fulfillRadios = document.querySelectorAll('input[name="fulfill"]');
+  const locationRow = document.getElementById("locationRow");
+  const calcResult = document.getElementById("calcResult");
 
-// Popup
-const popup = document.getElementById("popup");
-const printIdText = document.getElementById("printIdText");
-const copyBtn = document.getElementById("copyBtn");
-const closePopupBtn = document.getElementById("closePopupBtn");
+  const popup = document.getElementById("popup");
+  const printIdText = document.getElementById("printIdText");
+  const copyBtn = document.getElementById("copyBtn");
+  const closePopupBtn = document.getElementById("closePopupBtn");
 
-// Status section
-const checkStatusBtn = document.getElementById("checkStatusBtn");
-const statusPrintId = document.getElementById("statusPrintId");
-const statusResult = document.getElementById("statusResult");
+  const checkStatusBtn = document.getElementById("checkStatusBtn");
+  const statusInput = document.getElementById("statusPrintId");
+  const statusResult = document.getElementById("statusResult");
 
-// ====== HELPERS ======
-function getSelectedValue(name) {
-  const el = document.querySelector(`input[name="${name}"]:checked`);
-  return el ? el.value : null;
-}
+  let totalAmount = 0;
+  let currentPrintId = null;
 
-function calculatePrice() {
-  const pages = Number(pagesInput.value) || 0;
-  const copies = Number(copiesInput.value) || 0;
-  const color = getSelectedValue("color");
-  const fulfill = getSelectedValue("fulfill");
+  // Show/hide delivery location input
+  fulfillRadios.forEach((r) => {
+    r.addEventListener("change", () => {
+      if (r.value === "delivery") {
+        locationRow.classList.remove("hidden");
+      } else {
+        locationRow.classList.add("hidden");
+      }
+    });
+  });
 
-  if (pages <= 0 || copies <= 0) return null;
+  // Calculate button
+  calcBtn.addEventListener("click", () => {
+    const pages = parseInt(document.getElementById("pages").value || 0);
+    const copies = parseInt(document.getElementById("copies").value || 0);
+    const color = document.querySelector('input[name="color"]:checked');
+    const fulfill = document.querySelector('input[name="fulfill"]:checked');
 
-  let per = color === "color" ? 10 : 5;
-  let amount = pages * copies * per;
-  if (fulfill === "delivery") amount += 20;
+    if (!pages || !copies || !color || !fulfill) {
+      calcResult.textContent = "Please fill all required fields before calculating.";
+      return;
+    }
 
-  return amount;
-}
+    const rate = color.value === "color" ? 10 : 5;
+    totalAmount = pages * copies * rate;
+    if (fulfill.value === "delivery") totalAmount += 20;
 
-// ====== EVENT LISTENERS ======
-document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
-  r.addEventListener("change", () => {
-    const v = getSelectedValue("fulfill");
-    if (v === "delivery") {
-      locationRow.classList.remove("hidden");
-      locationInput.required = true;
-    } else {
-      locationRow.classList.add("hidden");
-      locationInput.required = false;
-      locationInput.value = "";
+    calcResult.textContent = `Total: ₱${totalAmount}`;
+  });
+
+  // Upload & Pay button
+  uploadPayBtn.addEventListener("click", async () => {
+    try {
+      const name = document.getElementById("name").value.trim();
+      const phone = document.getElementById("phone").value.trim();
+      const pages = document.getElementById("pages").value;
+      const copies = document.getElementById("copies").value;
+      const color = document.querySelector('input[name="color"]:checked')?.value;
+      const fulfill = document.querySelector('input[name="fulfill"]:checked')?.value;
+      const location = document.getElementById("location").value.trim();
+      const files = document.getElementById("files").files;
+
+      if (!name || !phone || !pages || !copies || !color || !fulfill || files.length === 0) {
+        alert("Please fill in all required fields and upload at least one file.");
+        return;
+      }
+
+      if (totalAmount === 0) {
+        alert("Please click 'Calculate' before uploading.");
+        return;
+      }
+
+      // Create form data for createPrint
+      const formData = new FormData();
+      formData.append("name", name);
+      formData.append("phone", phone);
+      formData.append("pages", pages);
+      formData.append("copies", copies);
+      formData.append("color", color);
+      formData.append("fulfill", fulfill);
+      formData.append("location", location);
+      formData.append("amount", totalAmount);
+      for (let f of files) formData.append("files", f);
+
+      // Send to createPrint
+      const printResp = await fetch(`${API_BASE}/createPrint`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const printData = await printResp.json();
+      if (!printResp.ok || !printData.success) {
+        alert("There was a problem creating your print. Please try again.");
+        return;
+      }
+
+      currentPrintId = printData.print_id;
+      printIdText.textContent = currentPrintId;
+
+      // Show popup
+      popup.classList.remove("hidden");
+
+      // After user closes popup → start checkout
+      closePopupBtn.onclick = async () => {
+        popup.classList.add("hidden");
+        await startCheckout(currentPrintId, totalAmount);
+      };
+
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(currentPrintId);
+        alert("Copied!");
+      };
+    } catch (err) {
+      console.error(err);
+      alert("Network error - please check your connection and try again.");
     }
   });
-});
 
-// ====== CALCULATE PRICE ======
-calcBtn.addEventListener("click", () => {
-  const amount = calculatePrice();
-  if (amount === null) {
-    calcResult.textContent = "Please fill in valid values for pages and copies.";
-    return;
-  }
-  calcResult.textContent = `Total: ₱${amount}`;
-});
+  async function startCheckout(printId, amount) {
+    try {
+      console.log("➡️ Starting checkout for", printId, amount);
+      const resp = await fetch(`${API_BASE}/createCheckout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ printId, amount }),
+      });
 
-// ====== MAIN: Upload + Create Print ======
-uploadPayBtn.addEventListener("click", async () => {
-  const files = filesInput.files;
-  const name = nameInput.value.trim();
-  const phone = phoneInput.value.trim();
-  const pages = pagesInput.value;
-  const copies = copiesInput.value;
-  const color = getSelectedValue("color");
-  const fulfill = getSelectedValue("fulfill");
-  const location = locationInput.value.trim();
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        console.error("Checkout failed:", data.error);
+        alert("Error starting payment. Try again later.");
+        return;
+      }
 
-  if (!files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
-    alert("Please fill out all required fields and upload at least one file.");
-    return;
+      window.location.href = data.checkoutUrl;
+    } catch (err) {
+      console.error("Checkout error:", err);
+      alert("Network error - please check your connection and try again.");
+    }
   }
 
-  const amount = calculatePrice();
-  if (!amount) {
-    alert("Please calculate price first.");
-    return;
-  }
-
-  try {
-    const formData = new FormData();
-    formData.append("name", name);
-    formData.append("phone", phone);
-    formData.append("pages", pages);
-    formData.append("copies", copies);
-    formData.append("color", color);
-    formData.append("fulfill", fulfill);
-    formData.append("location", location);
-    formData.append("amount", amount);
-    for (const file of files) formData.append("files", file);
-
-    const resp = await fetch(`${API_BASE}/createPrint`, {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await resp.json();
-    if (!resp.ok || !data.print_id) {
-      throw new Error(data.error || "Failed to create print");
+  // Check print status
+  checkStatusBtn.addEventListener("click", async () => {
+    const printId = statusInput.value.trim();
+    if (!printId) {
+      statusResult.textContent = "Please enter your Print ID.";
+      return;
     }
 
-    const printId = data.print_id;
-    printIdText.textContent = printId;
-    popup.classList.remove("hidden");
+    statusResult.textContent = "Checking status...";
+    try {
+      const resp = await fetch(`${API_BASE}/checkStatus`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ printId }),
+      });
+      const data = await resp.json();
 
-    // Store print details temporarily for checkout
-    popup.dataset.printId = printId;
-    popup.dataset.amount = amount;
-    popup.dataset.name = name;
-    popup.dataset.phone = phone;
+      if (!resp.ok || !data.success) {
+        statusResult.textContent = "Error checking status.";
+        console.error("❌ Status error:", data);
+        return;
+      }
 
-  } catch (err) {
-    console.error(err);
-    alert("Network error - please check your connection and try again.");
-  }
-});
-
-// ====== POPUP BUTTONS ======
-copyBtn.addEventListener("click", () => {
-  navigator.clipboard.writeText(printIdText.textContent);
-  alert("Print ID copied!");
-});
-
-closePopupBtn.addEventListener("click", async () => {
-  popup.classList.add("hidden");
-
-  // After closing popup → Start PayMongo Checkout
-  const printId = popup.dataset.printId;
-  const amount = popup.dataset.amount;
-  const name = popup.dataset.name;
-  const phone = popup.dataset.phone;
-
-  if (!printId || !amount) return;
-
-  try {
-    const resp = await fetch(`${API_BASE}/createCheckout`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ print_id: printId, amount, name, phone }),
-    });
-
-    const data = await resp.json();
-    if (!resp.ok || !data.checkout_url) {
-      throw new Error(data.error || "Error starting payment");
+      statusResult.innerHTML = `
+        ✅ <b>Print Code:</b> ${data.print_code}<br>
+        💵 <b>Payment:</b> ${data.payment_stat}<br>
+        🖨️ <b>Status:</b> ${data.print_status}
+      `;
+    } catch (err) {
+      console.error("❌ Error fetching status:", err);
+      statusResult.textContent = "Error checking status.";
     }
-
-    // Redirect to PayMongo checkout (test mode)
-    window.location.href = data.checkout_url;
-  } catch (err) {
-    console.error(err);
-    alert("Error starting payment. Try again later.");
-  }
-});
-
-// ====== STATUS CHECKER ======
-checkStatusBtn.addEventListener("click", async () => {
-  const printId = statusPrintId.value.trim();
-  if (!printId) {
-    alert("Enter a valid Print ID.");
-    return;
-  }
-
-  statusResult.textContent = "Checking status...";
-
-  try {
-    const resp = await fetch(`${API_BASE}/checkStatus`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printId }),
-    });
-
-    const data = await resp.json();
-    if (!resp.ok || !data.success) {
-      throw new Error(data.error || "Failed to check status");
-    }
-
-    const { print_code, payment_stat, print_status } = data;
-    statusResult.textContent = `🧾 ${print_code}\n💰 Payment: ${payment_stat}\n🖨️ Print Status: ${print_status}`;
-  } catch (err) {
-    console.error(err);
-    statusResult.textContent = "Error checking status.";
-  }
+  });
 });
