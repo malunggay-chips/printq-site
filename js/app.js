@@ -1,6 +1,7 @@
-// js/app.js
+// ====== IMPORT CONFIG ======
 import { API_BASE } from "./config.js";
 
+// ====== ELEMENTS ======
 const calcBtn = document.getElementById("calcBtn");
 const uploadPayBtn = document.getElementById("uploadPayBtn");
 const filesInput = document.getElementById("files");
@@ -12,16 +13,18 @@ const locationRow = document.getElementById("locationRow");
 const locationInput = document.getElementById("location");
 const calcResult = document.getElementById("calcResult");
 
+// Popup elements
 const popup = document.getElementById("popup");
 const printIdText = document.getElementById("printIdText");
 const copyBtn = document.getElementById("copyBtn");
 const closePopupBtn = document.getElementById("closePopupBtn");
 
-const statusPrintId = document.getElementById("statusPrintId");
+// Status checker
 const checkStatusBtn = document.getElementById("checkStatusBtn");
+const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
 
-// Helpers
+// ====== HELPERS ======
 function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
@@ -32,17 +35,21 @@ function calculatePrice() {
   const copies = Number(copiesInput.value) || 0;
   const color = getSelectedValue("color");
   const fulfill = getSelectedValue("fulfill");
-  if (pages <= 0 || copies <= 0) return null;
-  let per = color === "color" ? 10 : 5;
-  let amount = pages * copies * per;
-  if (fulfill === "delivery") amount += 20;
-  return amount;
+
+  if (pages <= 0 || copies <= 0 || !color || !fulfill) return null;
+
+  let pricePerPage = color === "color" ? 10 : 5;
+  let total = pages * copies * pricePerPage;
+  if (fulfill === "delivery") total += 20;
+
+  return total;
 }
 
-// Show/hide location
-document.querySelectorAll('input[name="fulfill"]').forEach(r => {
+// ====== EVENT: Fulfillment Toggle ======
+document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   r.addEventListener("change", () => {
-    if (getSelectedValue("fulfill") === "delivery") {
+    const val = getSelectedValue("fulfill");
+    if (val === "delivery") {
       locationRow.classList.remove("hidden");
       locationInput.required = true;
     } else {
@@ -53,18 +60,19 @@ document.querySelectorAll('input[name="fulfill"]').forEach(r => {
   });
 });
 
-// Calculate
+// ====== EVENT: Calculate ======
 calcBtn.addEventListener("click", () => {
-  const amt = calculatePrice();
-  if (amt === null) {
-    calcResult.textContent = "Please enter valid pages & copies.";
+  const total = calculatePrice();
+  if (total === null) {
+    calcResult.textContent = "⚠️ Please fill in all required fields first.";
     return;
   }
-  calcResult.textContent = `Total: ₱${amt}`;
+  calcResult.textContent = `💰 Total: ₱${total}`;
 });
 
-// Upload & Pay
+// ====== EVENT: Upload & Pay ======
 uploadPayBtn.addEventListener("click", async () => {
+  const files = filesInput.files;
   const name = nameInput.value.trim();
   const phone = phoneInput.value.trim();
   const pages = pagesInput.value;
@@ -73,18 +81,19 @@ uploadPayBtn.addEventListener("click", async () => {
   const fulfill = getSelectedValue("fulfill");
   const location = locationInput.value.trim();
 
-  if (!filesInput.files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
-    alert("Please complete all fields and upload at least one file.");
+  if (!files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
+    alert("⚠️ Please complete all fields and upload at least one file.");
     return;
   }
 
   const amount = calculatePrice();
   if (!amount) {
-    alert("Calculate the price first.");
+    alert("⚠️ Please calculate total before proceeding.");
     return;
   }
 
   try {
+    // Prepare form data
     const formData = new FormData();
     formData.append("name", name);
     formData.append("phone", phone);
@@ -94,79 +103,88 @@ uploadPayBtn.addEventListener("click", async () => {
     formData.append("fulfill", fulfill);
     formData.append("location", location);
     formData.append("amount", amount);
-    for (const f of filesInput.files) {
-      formData.append("files", f);
-    }
+    for (const file of files) formData.append("files", file);
 
+    // Step 1: Create Print Job
     const resp = await fetch(`${API_BASE}/createPrint`, {
       method: "POST",
       body: formData,
     });
 
+    if (!resp.ok) throw new Error("Failed to create print job.");
     const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || "createPrint failed");
+    const printId = data.print_id || data.id || "Print-0000";
 
-    const pid = data.print_id || "Unknown";
-    printIdText.textContent = pid;
+    // Show popup with print ID
+    printIdText.textContent = printId;
     popup.classList.remove("hidden");
 
-    // after popup, redirect to PayMongo
-    closePopupBtn.addEventListener("click", async () => {
+    // Step 2: Wait for popup close before starting payment
+    closePopupBtn.onclick = async () => {
       popup.classList.add("hidden");
+      alert("🔄 Starting PayMongo checkout...");
 
       try {
-        const coResp = await fetch(`${API_BASE}/createCheckout`, {
+        const resp2 = await fetch(`${API_BASE}/createCheckout`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ print_id: pid, amount, name }),
+          body: JSON.stringify({ print_id: printId, name, amount }),
         });
-        const coData = await coResp.json();
-        if (!coResp.ok) throw new Error(coData.error || "createCheckout failed");
-        window.location.href = coData.checkout_url;
-      } catch (err) {
-        console.error("❌ checkout error:", err);
+
+        if (!resp2.ok) throw new Error("Failed to start checkout session.");
+
+        const { url } = await resp2.json();
+        if (!url) throw new Error("Missing PayMongo URL.");
+
+        window.location.href = url; // Redirect to PayMongo checkout
+      } catch (e) {
+        console.error("💥 Payment error:", e);
         alert("Error starting payment. Try again later.");
       }
-    });
-
+    };
   } catch (err) {
-    console.error("❌ upload & print error:", err);
-    alert("Network error — please check your connection and try again.");
+    console.error("❌ Network error:", err);
+    alert("Network error - please check your connection and try again.");
   }
 });
 
-// Copy Print ID
+// ====== EVENT: Copy Print ID ======
 copyBtn.addEventListener("click", () => {
   navigator.clipboard.writeText(printIdText.textContent);
-  alert("Copied Print ID!");
+  alert("✅ Print ID copied to clipboard!");
 });
 
-// Check status
+// ====== EVENT: Check Print Status ======
 checkStatusBtn.addEventListener("click", async () => {
-  const pid = statusPrintId.value.trim();
-  if (!pid) {
-    alert("Enter Print ID.");
+  const printId = statusPrintId.value.trim();
+  if (!printId) {
+    alert("Enter your Print ID first!");
     return;
   }
-  statusResult.textContent = "Checking status...";
+
+  statusResult.textContent = "🔄 Checking status...";
 
   try {
     const resp = await fetch(`${API_BASE}/checkStatus`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ print_id: pid }),
+      body: JSON.stringify({ print_id: printId }),
     });
-    const stData = await resp.json();
-    if (!resp.ok) throw new Error(stData.error || "Status check failed");
+
+    if (!resp.ok) throw new Error("Failed to check status.");
+
+    const data = await resp.json();
+
+    if (data.error) throw new Error(data.error);
 
     statusResult.innerHTML = `
-      <p><strong>Print Code:</strong> ${stData.print_code}</p>
-      <p><strong>Payment Status:</strong> ${stData.payment_stat}</p>
-      <p><strong>Print Status:</strong> ${stData.print_status}</p>
-      <p><strong>Notification:</strong> ${stData.notification}</p>
+      🧾 <strong>Print Code:</strong> ${data.print_code || "N/A"}<br>
+      💰 <strong>Payment Status:</strong> ${data.payment_stat || "Unknown"}<br>
+      🖨️ <strong>Print Status:</strong> ${data.print_status || "Unknown"}<br>
+      📦 <strong>Notification:</strong> ${data.notification || "N/A"}
     `;
   } catch (err) {
-    console.error("❌ status error:", err);
+    console.error("❌ Status check failed:", err);
     statusResult.textContent = "Error checking status.";
   }
 });
