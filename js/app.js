@@ -1,4 +1,6 @@
-// ====== IMPORT CONFIG ======
+// app.js — FINAL INTEGRATED VERSION (2025)
+// Handles upload → createPrint → PayMongo checkout → status checking.
+
 import { API_BASE } from "./config.js";
 
 // ====== ELEMENTS ======
@@ -13,13 +15,13 @@ const locationRow = document.getElementById("locationRow");
 const locationInput = document.getElementById("location");
 const calcResult = document.getElementById("calcResult");
 
-// Popup elements
+// Popup
 const popup = document.getElementById("popup");
 const printIdText = document.getElementById("printIdText");
 const copyBtn = document.getElementById("copyBtn");
 const closePopupBtn = document.getElementById("closePopupBtn");
 
-// Status checker
+// Status section
 const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
@@ -36,20 +38,20 @@ function calculatePrice() {
   const color = getSelectedValue("color");
   const fulfill = getSelectedValue("fulfill");
 
-  if (pages <= 0 || copies <= 0 || !color || !fulfill) return null;
+  if (pages <= 0 || copies <= 0) return null;
 
-  let pricePerPage = color === "color" ? 10 : 5;
-  let total = pages * copies * pricePerPage;
-  if (fulfill === "delivery") total += 20;
+  let per = color === "color" ? 10 : 5;
+  let amount = pages * copies * per;
+  if (fulfill === "delivery") amount += 20;
 
-  return total;
+  return amount;
 }
 
-// ====== EVENT: Fulfillment Toggle ======
+// ====== EVENT LISTENERS ======
 document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   r.addEventListener("change", () => {
-    const val = getSelectedValue("fulfill");
-    if (val === "delivery") {
+    const v = getSelectedValue("fulfill");
+    if (v === "delivery") {
       locationRow.classList.remove("hidden");
       locationInput.required = true;
     } else {
@@ -60,17 +62,17 @@ document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   });
 });
 
-// ====== EVENT: Calculate ======
+// ====== CALCULATE PRICE ======
 calcBtn.addEventListener("click", () => {
-  const total = calculatePrice();
-  if (total === null) {
-    calcResult.textContent = "⚠️ Please fill in all required fields first.";
+  const amount = calculatePrice();
+  if (amount === null) {
+    calcResult.textContent = "Please fill in valid values for pages and copies.";
     return;
   }
-  calcResult.textContent = `💰 Total: ₱${total}`;
+  calcResult.textContent = `Total: ₱${amount}`;
 });
 
-// ====== EVENT: Upload & Pay ======
+// ====== MAIN: Upload + Create Print ======
 uploadPayBtn.addEventListener("click", async () => {
   const files = filesInput.files;
   const name = nameInput.value.trim();
@@ -82,18 +84,17 @@ uploadPayBtn.addEventListener("click", async () => {
   const location = locationInput.value.trim();
 
   if (!files.length || !name || !phone || !pages || !copies || !color || !fulfill) {
-    alert("⚠️ Please complete all fields and upload at least one file.");
+    alert("Please fill out all required fields and upload at least one file.");
     return;
   }
 
   const amount = calculatePrice();
   if (!amount) {
-    alert("⚠️ Please calculate total before proceeding.");
+    alert("Please calculate price first.");
     return;
   }
 
   try {
-    // Prepare form data
     const formData = new FormData();
     formData.append("name", name);
     formData.append("phone", phone);
@@ -105,86 +106,95 @@ uploadPayBtn.addEventListener("click", async () => {
     formData.append("amount", amount);
     for (const file of files) formData.append("files", file);
 
-    // Step 1: Create Print Job
     const resp = await fetch(`${API_BASE}/createPrint`, {
       method: "POST",
       body: formData,
     });
 
-    if (!resp.ok) throw new Error("Failed to create print job.");
     const data = await resp.json();
-    const printId = data.print_id || data.id || "Print-0000";
+    if (!resp.ok || !data.print_id) {
+      throw new Error(data.error || "Failed to create print");
+    }
 
-    // Show popup with print ID
+    const printId = data.print_id;
     printIdText.textContent = printId;
     popup.classList.remove("hidden");
 
-    // Step 2: Wait for popup close before starting payment
-    closePopupBtn.onclick = async () => {
-      popup.classList.add("hidden");
-      alert("🔄 Starting PayMongo checkout...");
+    // Store print details temporarily for checkout
+    popup.dataset.printId = printId;
+    popup.dataset.amount = amount;
+    popup.dataset.name = name;
+    popup.dataset.phone = phone;
 
-      try {
-        const resp2 = await fetch(`${API_BASE}/createCheckout`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ print_id: printId, name, amount }),
-        });
-
-        if (!resp2.ok) throw new Error("Failed to start checkout session.");
-
-        const { url } = await resp2.json();
-        if (!url) throw new Error("Missing PayMongo URL.");
-
-        window.location.href = url; // Redirect to PayMongo checkout
-      } catch (e) {
-        console.error("💥 Payment error:", e);
-        alert("Error starting payment. Try again later.");
-      }
-    };
   } catch (err) {
-    console.error("❌ Network error:", err);
+    console.error(err);
     alert("Network error - please check your connection and try again.");
   }
 });
 
-// ====== EVENT: Copy Print ID ======
+// ====== POPUP BUTTONS ======
 copyBtn.addEventListener("click", () => {
   navigator.clipboard.writeText(printIdText.textContent);
-  alert("✅ Print ID copied to clipboard!");
+  alert("Print ID copied!");
 });
 
-// ====== EVENT: Check Print Status ======
+closePopupBtn.addEventListener("click", async () => {
+  popup.classList.add("hidden");
+
+  // After closing popup → Start PayMongo Checkout
+  const printId = popup.dataset.printId;
+  const amount = popup.dataset.amount;
+  const name = popup.dataset.name;
+  const phone = popup.dataset.phone;
+
+  if (!printId || !amount) return;
+
+  try {
+    const resp = await fetch(`${API_BASE}/createCheckout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ print_id: printId, amount, name, phone }),
+    });
+
+    const data = await resp.json();
+    if (!resp.ok || !data.checkout_url) {
+      throw new Error(data.error || "Error starting payment");
+    }
+
+    // Redirect to PayMongo checkout (test mode)
+    window.location.href = data.checkout_url;
+  } catch (err) {
+    console.error(err);
+    alert("Error starting payment. Try again later.");
+  }
+});
+
+// ====== STATUS CHECKER ======
 checkStatusBtn.addEventListener("click", async () => {
   const printId = statusPrintId.value.trim();
   if (!printId) {
-    alert("Enter your Print ID first!");
+    alert("Enter a valid Print ID.");
     return;
   }
 
-  statusResult.textContent = "🔄 Checking status...";
+  statusResult.textContent = "Checking status...";
 
   try {
     const resp = await fetch(`${API_BASE}/checkStatus`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ print_id: printId }),
+      body: JSON.stringify({ printId }),
     });
 
-    if (!resp.ok) throw new Error("Failed to check status.");
-
     const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      throw new Error(data.error || "Failed to check status");
+    }
 
-    if (data.error) throw new Error(data.error);
-
-    statusResult.innerHTML = `
-      🧾 <strong>Print Code:</strong> ${data.print_code || "N/A"}<br>
-      💰 <strong>Payment Status:</strong> ${data.payment_stat || "Unknown"}<br>
-      🖨️ <strong>Print Status:</strong> ${data.print_status || "Unknown"}<br>
-      📦 <strong>Notification:</strong> ${data.notification || "N/A"}
-    `;
+    const { print_code, payment_stat, print_status } = data;
+    statusResult.textContent = `🧾 ${print_code}\n💰 Payment: ${payment_stat}\n🖨️ Print Status: ${print_status}`;
   } catch (err) {
-    console.error("❌ Status check failed:", err);
+    console.error(err);
     statusResult.textContent = "Error checking status.";
   }
 });
