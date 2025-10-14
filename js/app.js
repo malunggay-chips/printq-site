@@ -2,7 +2,6 @@
 import { API_BASE } from "./config.js";
 
 document.addEventListener("DOMContentLoaded", () => {
-  const form = document.getElementById("printForm");
   const calcBtn = document.getElementById("calcBtn");
   const uploadPayBtn = document.getElementById("uploadPayBtn");
   const fulfillRadios = document.querySelectorAll('input[name="fulfill"]');
@@ -24,7 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Show/hide delivery location input
   fulfillRadios.forEach((r) => {
     r.addEventListener("change", () => {
-      if (r.value === "delivery") {
+      if (document.querySelector('input[name="fulfill"]:checked')?.value === "delivery") {
         locationRow.classList.remove("hidden");
       } else {
         locationRow.classList.add("hidden");
@@ -32,7 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Calculate button
+  // Calculate price
   calcBtn.addEventListener("click", () => {
     const pages = parseInt(document.getElementById("pages").value || 0);
     const copies = parseInt(document.getElementById("copies").value || 0);
@@ -51,7 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
     calcResult.textContent = `Total: ₱${totalAmount}`;
   });
 
-  // Upload & Pay button
+  // Upload & Pay
   uploadPayBtn.addEventListener("click", async () => {
     try {
       const name = document.getElementById("name").value.trim();
@@ -73,7 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // Create form data for createPrint
+      // Build FormData
       const formData = new FormData();
       formData.append("name", name);
       formData.append("phone", phone);
@@ -85,14 +84,16 @@ document.addEventListener("DOMContentLoaded", () => {
       formData.append("amount", totalAmount);
       for (let f of files) formData.append("files", f);
 
-      // Send to createPrint
+      // Call createPrint
       const printResp = await fetch(`${API_BASE}/createPrint`, {
         method: "POST",
         body: formData,
       });
 
       const printData = await printResp.json();
-      if (!printResp.ok || !printData.success) {
+      console.log("🧾 createPrint response:", printData);
+
+      if (!printResp.ok || !printData.print_id) {
         alert("There was a problem creating your print. Please try again.");
         return;
       }
@@ -103,25 +104,33 @@ document.addEventListener("DOMContentLoaded", () => {
       // Show popup
       popup.classList.remove("hidden");
 
-      // After user closes popup → start checkout
+      // Copy ID button
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(currentPrintId);
+        alert("Print ID copied!");
+      };
+
+      // Close popup → start checkout
       closePopupBtn.onclick = async () => {
         popup.classList.add("hidden");
         await startCheckout(currentPrintId, totalAmount);
       };
-
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(currentPrintId);
-        alert("Copied!");
-      };
     } catch (err) {
-      console.error(err);
+      console.error("❌ Upload error:", err);
       alert("Network error - please check your connection and try again.");
     }
   });
 
+  // Start PayMongo checkout
   async function startCheckout(printId, amount) {
+    if (!printId || !amount) {
+      alert("Missing print ID or amount for checkout.");
+      return;
+    }
+
     try {
-      console.log("➡️ Starting checkout for", printId, amount);
+      console.log("🧾 Starting checkout for:", printId, "₱", amount);
+
       const resp = await fetch(`${API_BASE}/createCheckout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -129,15 +138,17 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       const data = await resp.json();
-      if (!resp.ok || !data.success) {
-        console.error("Checkout failed:", data.error);
+      console.log("💰 createCheckout response:", data);
+
+      if (!resp.ok || !data.checkoutUrl) {
         alert("Error starting payment. Try again later.");
         return;
       }
 
+      // Redirect to PayMongo checkout
       window.location.href = data.checkoutUrl;
     } catch (err) {
-      console.error("Checkout error:", err);
+      console.error("❌ Checkout error:", err);
       alert("Network error - please check your connection and try again.");
     }
   }
@@ -151,17 +162,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     statusResult.textContent = "Checking status...";
+
     try {
+      console.log("🧾 Checking status for:", printId);
+
       const resp = await fetch(`${API_BASE}/checkStatus`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ printId }),
       });
+
       const data = await resp.json();
+      console.log("📦 checkStatus response:", data);
 
       if (!resp.ok || !data.success) {
         statusResult.textContent = "Error checking status.";
-        console.error("❌ Status error:", data);
         return;
       }
 
@@ -171,7 +186,7 @@ document.addEventListener("DOMContentLoaded", () => {
         🖨️ <b>Status:</b> ${data.print_status}
       `;
     } catch (err) {
-      console.error("❌ Error fetching status:", err);
+      console.error("❌ Status check error:", err);
       statusResult.textContent = "Error checking status.";
     }
   });
