@@ -171,23 +171,20 @@ copyBtn.addEventListener("click", () => {
 checkStatusBtn.addEventListener("click", async () => {
   const printId = statusPrintId.value.trim();
   if (!printId) {
-    alert("Please enter your Print ID first.");
+    alert("Please enter your Print ID (e.g., Print-1234).");
     return;
   }
 
   statusResult.textContent = "⏳ Checking status...";
 
   try {
-    // 1️⃣ Fetch the print record from Supabase
-    const resPrint = await fetch(
-      `${SUPABASE_URL}/rest/v1/prints?print_id=eq.${printId}`,
-      {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-      }
-    );
+    // 1️⃣ Fetch print record from Supabase using print_id
+    const resPrint = await fetch(`${SUPABASE_URL}/rest/v1/prints?print_id=eq.${printId}`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    });
 
     const printData = await resPrint.json();
     if (!printData.length) {
@@ -195,34 +192,44 @@ checkStatusBtn.addEventListener("click", async () => {
       return;
     }
 
-    const printCode = printData[0].print_code || printId;
+    const print = printData[0];
+    const printCode = print.print_code || "Unknown Code";
+    const paymentStat = print.payment_stat || "Unpaid";
+    const printStatus = print.print_status || "Pending";
 
-    // 2️⃣ Fetch payments from PayMongo
+    // 2️⃣ Check PayMongo payment records
     const resPay = await fetch("https://api.paymongo.com/v1/payments", {
       headers: {
         Authorization: `Basic ${btoa(PAYMONGO_SECRET + ":")}`,
       },
     });
-
     const data = await resPay.json();
+
+    // Find the PayMongo record related to this print_id
     const payment = data.data.find(
       (p) => p.attributes?.metadata?.print_id === printId
     );
 
-    // 3️⃣ Display result
-    if (!payment) {
-      statusResult.textContent = `🧾 ${printCode} — No payment found.`;
-      return;
+    let paymentMsg = "";
+    if (payment) {
+      const status = payment.attributes.status;
+      if (status === "paid") {
+        paymentMsg = "✅ Paid / Approved";
+      } else if (status === "failed") {
+        paymentMsg = "❌ Payment Failed / Rejected";
+      } else {
+        paymentMsg = `⌛ Payment Status: ${status}`;
+      }
+    } else {
+      paymentMsg = "🧾 No payment found.";
     }
 
-    const status = payment.attributes.status;
-    if (status === "paid") {
-      statusResult.textContent = `✅ ${printCode} — Paid / Approved`;
-    } else if (status === "failed") {
-      statusResult.textContent = `❌ ${printCode} — Payment Failed / Rejected`;
-    } else {
-      statusResult.textContent = `⌛ ${printCode} — Payment Status: ${status}`;
-    }
+    // 3️⃣ Display the results
+    statusResult.innerHTML = `
+      <strong>Print Code:</strong> ${printCode}<br>
+      <strong>Payment:</strong> ${paymentMsg}<br>
+      <strong>Print Status:</strong> ${printStatus}
+    `;
   } catch (err) {
     console.error("❌ Error checking status:", err);
     statusResult.textContent = "Error checking status.";
