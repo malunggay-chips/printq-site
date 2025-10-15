@@ -1,5 +1,10 @@
 // js/app.js
-import { SUPABASE_URL, SUPABASE_ANON_KEY, PAYMONGO_SECRET, API_BASE } from "./config.js";
+import {
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  PAYMONGO_SECRET,
+  API_BASE,
+} from "./config.js";
 
 // ====== ELEMENTS ======
 const calcBtn = document.getElementById("calcBtn");
@@ -22,7 +27,7 @@ const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
 
-// ====== PRICE CALCULATION ======
+// ====== HELPERS ======
 function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
@@ -102,6 +107,8 @@ uploadPayBtn.addEventListener("click", async () => {
     const data = await resp.json();
     const printId = data.print_id || data.printId;
 
+    console.log("✅ Print created:", printId);
+
     // 2️⃣ Show popup
     printIdText.textContent = printId;
     popup.classList.remove("hidden");
@@ -112,14 +119,16 @@ uploadPayBtn.addEventListener("click", async () => {
       await startPaymongoCheckout(printId, amount);
     };
   } catch (err) {
-    console.error("❌ Error:", err);
+    console.error("❌ Error creating print:", err);
     alert("Network error — please check your connection and try again.");
   }
 });
 
-// ====== PAYMONGO CHECKOUT ======
+// ====== PAYMONGO CHECKOUT (TEST MODE) ======
 async function startPaymongoCheckout(printId, amount) {
   try {
+    console.log(`🧾 Starting PayMongo checkout for ${printId} ₱${amount}`);
+
     const res = await fetch("https://api.paymongo.com/v1/checkout_sessions", {
       method: "POST",
       headers: {
@@ -141,7 +150,7 @@ async function startPaymongoCheckout(printId, amount) {
             success_url: window.location.origin,
             cancel_url: window.location.origin,
             metadata: {
-              print_id: printId, // ✅ add this for webhook link
+              print_id: printId, // ✅ Needed for webhook to update Supabase
             },
           },
         },
@@ -149,19 +158,12 @@ async function startPaymongoCheckout(printId, amount) {
     });
 
     const json = await res.json();
+    console.log("🧾 PayMongo response:", json);
+
     if (!res.ok || !json.data)
       throw new Error(json.errors?.[0]?.detail || "Error starting payment");
 
     console.log("✅ Checkout session created:", json.data.id);
-    window.location.href = json.data.attributes.checkout_url;
-  } catch (err) {
-    console.error("❌ Error starting payment:", err);
-    alert("Error starting payment. Try again later.");
-  }
-}
-
-    const json = await res.json();
-    if (!res.ok || !json.data) throw new Error(json.errors?.[0]?.detail || "Error starting payment");
     window.location.href = json.data.attributes.checkout_url;
   } catch (err) {
     console.error("❌ Error starting payment:", err);
@@ -175,15 +177,17 @@ copyBtn.addEventListener("click", () => {
   alert("Print ID copied!");
 });
 
-// ====== CHECK STATUS BUTTON ======
+// ====== STATUS CHECKER ======
 checkStatusBtn.addEventListener("click", async () => {
   const printId = statusPrintId.value.trim();
-  if (!printId) return alert("Please enter a valid Print ID.");
+  if (!printId) {
+    alert("Please enter a valid Print ID.");
+    return;
+  }
 
   statusResult.textContent = "Checking status...";
 
   try {
-    // Use PayMongo API to fetch payment info
     const res = await fetch("https://api.paymongo.com/v1/payments", {
       headers: {
         Authorization: `Basic ${btoa(PAYMONGO_SECRET + ":")}`,
@@ -191,26 +195,25 @@ checkStatusBtn.addEventListener("click", async () => {
     });
     const data = await res.json();
 
-    // Try to find a payment linked to this print
-    const payment = data.data.find((p) =>
-      p.attributes.description?.includes(printId)
+    const payment = data.data.find(
+      (p) => p.attributes?.metadata?.print_id === printId
     );
 
     if (!payment) {
-      statusResult.textContent = "No payment found for this Print ID.";
+      statusResult.textContent = "❌ No payment found for this Print ID.";
       return;
     }
 
     const status = payment.attributes.status;
     if (status === "paid") {
-      statusResult.textContent = `✅ Payment successful for ${printId}`;
+      statusResult.textContent = `✅ Payment successful for ${printId}\nStatus: Paid / Approved`;
     } else if (status === "failed") {
-      statusResult.textContent = `❌ Payment failed for ${printId}`;
+      statusResult.textContent = `❌ Payment failed for ${printId}\nStatus: Failed / Rejected`;
     } else {
       statusResult.textContent = `⌛ Payment status: ${status}`;
     }
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error checking status:", err);
     statusResult.textContent = "Error checking status.";
   }
 });
