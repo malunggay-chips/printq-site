@@ -22,7 +22,7 @@ const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
 
-// ===== HELPERS =====
+// ===== PRICE CALCULATION =====
 function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
@@ -85,7 +85,7 @@ uploadPayBtn.addEventListener("click", async () => {
   }
 
   try {
-    // 1️⃣ Create a print record in Supabase via Edge Function
+    // 1️⃣ Create print record
     const formData = new FormData();
     formData.append("name", name);
     formData.append("phone", phone);
@@ -101,16 +101,16 @@ uploadPayBtn.addEventListener("click", async () => {
       method: "POST",
       body: formData,
     });
-
     if (!resp.ok) throw new Error("Failed to create print");
+
     const data = await resp.json();
     const printId = data.print_id || data.printId;
 
-    // 2️⃣ Show popup with Print ID
+    // 2️⃣ Show popup
     printIdText.textContent = printId;
     popup.classList.remove("hidden");
 
-    // 3️⃣ Wait for user to close popup → then start PayMongo checkout
+    // 3️⃣ When popup closed → start payment
     closePopupBtn.onclick = async () => {
       popup.classList.add("hidden");
       await startPaymongoCheckout(printId, amount);
@@ -138,22 +138,27 @@ async function startPaymongoCheckout(printId, amount) {
                 name: `Print Order ${printId}`,
                 quantity: 1,
                 currency: "PHP",
-                amount: amount * 100, // convert to centavos
+                amount: amount * 100,
               },
             ],
             payment_method_types: ["gcash", "paymaya"],
-            metadata: { print_id: printId },
             success_url: window.location.origin,
             cancel_url: window.location.origin,
+            metadata: {
+              print_id: printId,
+            },
           },
         },
       }),
     });
 
     const json = await res.json();
-    if (!res.ok || !json.data)
+    if (!res.ok || !json.data) {
+      console.error("PayMongo Error:", json);
       throw new Error(json.errors?.[0]?.detail || "Error starting payment");
+    }
 
+    // Redirect to PayMongo checkout page
     window.location.href = json.data.attributes.checkout_url;
   } catch (err) {
     console.error("❌ Error starting payment:", err);
@@ -161,10 +166,10 @@ async function startPaymongoCheckout(printId, amount) {
   }
 }
 
-// ===== COPY PRINT ID BUTTON =====
+// ===== COPY BUTTON =====
 copyBtn.addEventListener("click", () => {
   navigator.clipboard.writeText(printIdText.textContent);
-  alert("✅ Print ID copied!");
+  alert("Print ID copied!");
 });
 
 // ===== STATUS CHECKER =====
@@ -178,26 +183,33 @@ checkStatusBtn.addEventListener("click", async () => {
   statusResult.textContent = "⏳ Checking status...";
 
   try {
-    // 1️⃣ Fetch print record from Supabase using print_id
-    const resPrint = await fetch(`${SUPABASE_URL}/rest/v1/prints?print_id=eq.${printId}`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-    });
+    // 1️⃣ Fetch print record from Supabase
+    const resPrint = await fetch(
+      `${SUPABASE_URL}/rest/v1/prints?print_id=eq.${printId}&select=*`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      }
+    );
+
+    if (!resPrint.ok) {
+      throw new Error(`Supabase responded with ${resPrint.status}`);
+    }
 
     const printData = await resPrint.json();
-    if (!printData.length) {
+    if (!Array.isArray(printData) || printData.length === 0) {
       statusResult.textContent = "❌ No record found for this Print ID.";
       return;
     }
 
     const print = printData[0];
-    const printCode = print.print_code || "Unknown Code";
+    const printCode = print.print_code || "(Unknown Code)";
     const paymentStat = print.payment_stat || "Unpaid";
     const printStatus = print.print_status || "Pending";
 
-    // 2️⃣ Check PayMongo payment records
+    // 2️⃣ Check PayMongo payments
     const resPay = await fetch("https://api.paymongo.com/v1/payments", {
       headers: {
         Authorization: `Basic ${btoa(PAYMONGO_SECRET + ":")}`,
@@ -205,29 +217,24 @@ checkStatusBtn.addEventListener("click", async () => {
     });
     const data = await resPay.json();
 
-    // Find the PayMongo record related to this print_id
-    const payment = data.data.find(
-      (p) => p.attributes?.metadata?.print_id === printId
-    );
-
-    let paymentMsg = "";
-    if (payment) {
-      const status = payment.attributes.status;
-      if (status === "paid") {
-        paymentMsg = "✅ Paid / Approved";
-      } else if (status === "failed") {
-        paymentMsg = "❌ Payment Failed / Rejected";
-      } else {
-        paymentMsg = `⌛ Payment Status: ${status}`;
+    let paymentMsg = "🧾 No payment found.";
+    if (Array.isArray(data.data)) {
+      const payment = data.data.find(
+        (p) => p.attributes?.metadata?.print_id === printId
+      );
+      if (payment) {
+        const status = payment.attributes.status;
+        if (status === "paid") paymentMsg = "✅ Paid / Approved";
+        else if (status === "failed") paymentMsg = "❌ Payment Failed / Rejected";
+        else paymentMsg = `⌛ Payment Status: ${status}`;
       }
-    } else {
-      paymentMsg = "🧾 No payment found.";
     }
 
-    // 3️⃣ Display the results
+    // 3️⃣ Show info
     statusResult.innerHTML = `
       <strong>Print Code:</strong> ${printCode}<br>
       <strong>Payment:</strong> ${paymentMsg}<br>
+      <strong>Database Payment Stat:</strong> ${paymentStat}<br>
       <strong>Print Status:</strong> ${printStatus}
     `;
   } catch (err) {
