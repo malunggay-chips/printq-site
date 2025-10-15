@@ -109,18 +109,43 @@ copyBtn.addEventListener("click", () => {
 // Checkout
 async function startCheckout(print_id, amount) {
   try {
+    console.log("🧾 Sending checkout request:", { print_id, amount });
+
     const res = await fetch(`${API_BASE}/createCheckout`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Origin": window.location.origin,
+      },
       body: JSON.stringify({ print_id, amount }),
     });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Checkout failed");
+    const text = await res.text(); // read raw response for better error checking
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error("Invalid JSON from server:", text);
+      throw new Error("Server returned invalid JSON");
+    }
+
+    if (!res.ok) {
+      console.error("Checkout failed:", data);
+      throw new Error(data.error || "Failed to create checkout");
+    }
+
+    if (!data.checkout_url) {
+      console.error("❌ No checkout_url in response:", data);
+      throw new Error("No checkout URL from PayMongo");
+    }
+
+    console.log("✅ Redirecting to PayMongo checkout:", data.checkout_url);
     window.location.href = data.checkout_url;
   } catch (err) {
-    alert("Network error — please check your connection.");
-    console.error(err);
+    console.error("❌ Error starting checkout:", err);
+    alert("Network error — please check your connection and try again.");
   }
 }
 
