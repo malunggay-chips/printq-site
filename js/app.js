@@ -6,7 +6,7 @@ import {
   API_BASE,
 } from "./config.js";
 
-// ====== ELEMENTS ======
+// === ELEMENTS ===
 const calcBtn = document.getElementById("calcBtn");
 const uploadPayBtn = document.getElementById("uploadPayBtn");
 const filesInput = document.getElementById("files");
@@ -27,7 +27,7 @@ const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
 
-// ====== HELPERS ======
+// === HELPERS ===
 function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
@@ -41,13 +41,13 @@ function calculatePrice() {
 
   if (!pages || !copies || !color) return null;
 
-  let per = color === "color" ? 10 : 5;
+  const per = color === "color" ? 10 : 5;
   let total = pages * copies * per;
   if (fulfill === "delivery") total += 20;
   return total;
 }
 
-// ====== FULFILLMENT HANDLER ======
+// === FULFILLMENT HANDLER ===
 document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   r.addEventListener("change", () => {
     const v = getSelectedValue("fulfill");
@@ -62,17 +62,17 @@ document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   });
 });
 
-// ====== CALCULATE BUTTON ======
+// === CALCULATE BUTTON ===
 calcBtn.addEventListener("click", () => {
   const amount = calculatePrice();
   if (!amount) {
-    calcResult.textContent = "Please fill in valid details.";
+    calcResult.textContent = "⚠️ Please fill in all details first.";
     return;
   }
-  calcResult.textContent = `Total: ₱${amount}`;
+  calcResult.textContent = `💰 Total: ₱${amount}`;
 });
 
-// ====== UPLOAD + PAY FLOW ======
+// === UPLOAD & PAY FLOW ===
 uploadPayBtn.addEventListener("click", async () => {
   const files = filesInput.files;
   const name = nameInput.value.trim();
@@ -84,13 +84,18 @@ uploadPayBtn.addEventListener("click", async () => {
   const location = locationInput.value.trim();
   const amount = calculatePrice();
 
-  if (!name || !phone || !pages || !copies || !color || !fulfill || !files.length || !amount) {
-    alert("Please fill out all fields and upload your files.");
+  if (!name || !phone || !pages || !copies || !color || !fulfill || !amount) {
+    alert("⚠️ Please complete all fields before uploading.");
+    return;
+  }
+
+  if (!files || files.length === 0) {
+    alert("⚠️ Please upload at least one file.");
     return;
   }
 
   try {
-    // 1️⃣ Create a print record
+    // 1️⃣ CREATE PRINT RECORD IN SUPABASE
     const formData = new FormData();
     formData.append("name", name);
     formData.append("phone", phone);
@@ -100,34 +105,43 @@ uploadPayBtn.addEventListener("click", async () => {
     formData.append("fulfill", fulfill);
     formData.append("location", location);
     formData.append("amount", amount);
-    for (const f of files) formData.append("files", f);
 
-    const resp = await fetch(`${API_BASE}/createPrint`, { method: "POST", body: formData });
-    if (!resp.ok) throw new Error("Failed to create print");
+    for (const f of files) {
+      formData.append("files", f);
+    }
+
+    const resp = await fetch(`${API_BASE}/createPrint`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
     const data = await resp.json();
     const printId = data.print_id || data.printId;
 
-    console.log("✅ Print created:", printId);
+    if (!printId) throw new Error("Missing Print ID from server");
 
-    // 2️⃣ Show popup
+    console.log("✅ Print record created:", printId);
+
+    // 2️⃣ SHOW POPUP
     printIdText.textContent = printId;
     popup.classList.remove("hidden");
 
-    // 3️⃣ Wait for user to close popup before redirecting to payment
+    // 3️⃣ CLOSE POPUP THEN START PAYMENT
     closePopupBtn.onclick = async () => {
       popup.classList.add("hidden");
       await startPaymongoCheckout(printId, amount);
     };
   } catch (err) {
-    console.error("❌ Error creating print:", err);
-    alert("Network error — please check your connection and try again.");
+    console.error("❌ Upload error:", err);
+    alert("Network error — please check your internet connection.");
   }
 });
 
-// ====== PAYMONGO CHECKOUT (TEST MODE) ======
+// === PAYMONGO CHECKOUT (TEST MODE) ===
 async function startPaymongoCheckout(printId, amount) {
   try {
-    console.log(`🧾 Starting PayMongo checkout for ${printId} ₱${amount}`);
+    console.log(`🧾 Starting checkout for ${printId}, ₱${amount}`);
 
     const res = await fetch("https://api.paymongo.com/v1/checkout_sessions", {
       method: "POST",
@@ -143,14 +157,14 @@ async function startPaymongoCheckout(printId, amount) {
                 name: `Print Order ${printId}`,
                 quantity: 1,
                 currency: "PHP",
-                amount: amount * 100, // centavos
+                amount: amount * 100, // convert to centavos
               },
             ],
             payment_method_types: ["gcash", "paymaya"],
             success_url: window.location.origin,
             cancel_url: window.location.origin,
             metadata: {
-              print_id: printId, // ✅ Needed for webhook to update Supabase
+              print_id: printId, // ✅ used by webhook
             },
           },
         },
@@ -161,31 +175,32 @@ async function startPaymongoCheckout(printId, amount) {
     console.log("🧾 PayMongo response:", json);
 
     if (!res.ok || !json.data)
-      throw new Error(json.errors?.[0]?.detail || "Error starting payment");
+      throw new Error(json.errors?.[0]?.detail || "Failed to create checkout");
 
-    console.log("✅ Checkout session created:", json.data.id);
-    window.location.href = json.data.attributes.checkout_url;
+    const checkoutUrl = json.data.attributes.checkout_url;
+    console.log("✅ Redirecting to checkout:", checkoutUrl);
+    window.location.href = checkoutUrl;
   } catch (err) {
-    console.error("❌ Error starting payment:", err);
+    console.error("❌ Error starting PayMongo checkout:", err);
     alert("Error starting payment. Try again later.");
   }
 }
 
-// ====== COPY BUTTON ======
+// === COPY PRINT ID BUTTON ===
 copyBtn.addEventListener("click", () => {
   navigator.clipboard.writeText(printIdText.textContent);
-  alert("Print ID copied!");
+  alert("📋 Print ID copied!");
 });
 
-// ====== STATUS CHECKER ======
+// === STATUS CHECKER ===
 checkStatusBtn.addEventListener("click", async () => {
   const printId = statusPrintId.value.trim();
   if (!printId) {
-    alert("Please enter a valid Print ID.");
+    alert("Please enter your Print ID first.");
     return;
   }
 
-  statusResult.textContent = "Checking status...";
+  statusResult.textContent = "⏳ Checking status...";
 
   try {
     const res = await fetch("https://api.paymongo.com/v1/payments", {
@@ -193,8 +208,8 @@ checkStatusBtn.addEventListener("click", async () => {
         Authorization: `Basic ${btoa(PAYMONGO_SECRET + ":")}`,
       },
     });
-    const data = await res.json();
 
+    const data = await res.json();
     const payment = data.data.find(
       (p) => p.attributes?.metadata?.print_id === printId
     );
@@ -206,11 +221,11 @@ checkStatusBtn.addEventListener("click", async () => {
 
     const status = payment.attributes.status;
     if (status === "paid") {
-      statusResult.textContent = `✅ Payment successful for ${printId}\nStatus: Paid / Approved`;
+      statusResult.textContent = `✅ ${printId} — Paid / Approved`;
     } else if (status === "failed") {
-      statusResult.textContent = `❌ Payment failed for ${printId}\nStatus: Failed / Rejected`;
+      statusResult.textContent = `❌ ${printId} — Payment Failed / Rejected`;
     } else {
-      statusResult.textContent = `⌛ Payment status: ${status}`;
+      statusResult.textContent = `⌛ ${printId} — Payment Status: ${status}`;
     }
   } catch (err) {
     console.error("❌ Error checking status:", err);
