@@ -134,16 +134,31 @@ async function startPaymongoCheckout(printId, amount) {
                 name: `Print Order ${printId}`,
                 quantity: 1,
                 currency: "PHP",
-                amount: amount * 100, // convert to centavos
+                amount: amount * 100, // centavos
               },
             ],
             payment_method_types: ["gcash", "paymaya"],
             success_url: window.location.origin,
             cancel_url: window.location.origin,
+            metadata: {
+              print_id: printId, // ✅ add this for webhook link
+            },
           },
         },
       }),
     });
+
+    const json = await res.json();
+    if (!res.ok || !json.data)
+      throw new Error(json.errors?.[0]?.detail || "Error starting payment");
+
+    console.log("✅ Checkout session created:", json.data.id);
+    window.location.href = json.data.attributes.checkout_url;
+  } catch (err) {
+    console.error("❌ Error starting payment:", err);
+    alert("Error starting payment. Try again later.");
+  }
+}
 
     const json = await res.json();
     if (!res.ok || !json.data) throw new Error(json.errors?.[0]?.detail || "Error starting payment");
