@@ -1,11 +1,11 @@
-// js/app.js
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+// ✅ app.js – full client-side logic (no edge functions)
 import { SUPABASE_URL, SUPABASE_ANON_KEY, PAYMONGO_SECRET } from "./config.js";
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.44.4/+esm";
 
-// Initialize Supabase client
+// ========== INIT SUPABASE ==========
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ====== ELEMENTS ======
+// ========== ELEMENTS ==========
 const calcBtn = document.getElementById("calcBtn");
 const uploadPayBtn = document.getElementById("uploadPayBtn");
 const filesInput = document.getElementById("files");
@@ -26,7 +26,7 @@ const checkStatusBtn = document.getElementById("checkStatusBtn");
 const statusPrintId = document.getElementById("statusPrintId");
 const statusResult = document.getElementById("statusResult");
 
-// ====== PRICE CALCULATION ======
+// ========== HELPERS ==========
 function getSelectedValue(name) {
   const el = document.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : null;
@@ -46,7 +46,7 @@ function calculatePrice() {
   return total;
 }
 
-// ====== FULFILLMENT HANDLER ======
+// ========== DELIVERY FIELD TOGGLE ==========
 document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   r.addEventListener("change", () => {
     const v = getSelectedValue("fulfill");
@@ -61,7 +61,7 @@ document.querySelectorAll('input[name="fulfill"]').forEach((r) => {
   });
 });
 
-// ====== CALCULATE BUTTON ======
+// ========== CALCULATE BUTTON ==========
 calcBtn.addEventListener("click", () => {
   const amount = calculatePrice();
   if (!amount) {
@@ -71,7 +71,7 @@ calcBtn.addEventListener("click", () => {
   calcResult.textContent = `Total: ₱${amount}`;
 });
 
-// ====== UPLOAD + PAY FLOW ======
+// ========== UPLOAD + PAY FLOW ==========
 uploadPayBtn.addEventListener("click", async () => {
   const files = filesInput.files;
   const name = nameInput.value.trim();
@@ -89,11 +89,15 @@ uploadPayBtn.addEventListener("click", async () => {
   }
 
   try {
-    // Generate a unique print ID
-    const printId = `Print-${Math.floor(1000 + Math.random() * 9000)}`;
-    const printCode = `${name}-${Date.now()}`;
+    // Create print ID and code
+    const printId = "Print-" + Math.floor(1000 + Math.random() * 9000);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const printCode = `${name}-${timestamp}`;
 
-    // Insert record directly into Supabase
+    // Upload file names (for demo only — not storing actual file)
+    const fileNames = Array.from(files).map((f) => f.name);
+
+    // Insert into Supabase
     const { error } = await supabase.from("prints").insert([
       {
         print_id: printId,
@@ -104,20 +108,21 @@ uploadPayBtn.addEventListener("click", async () => {
         color,
         fulfill,
         location,
+        files: fileNames,
         amount,
-        payment_stat: "unpaid",
-        print_status: "pending",
-        print_code: printCode
-      }
+        payment_stat: "Unpaid",
+        print_status: "Pending",
+        notification: "Waiting for confirmation",
+        print_code: printCode,
+      },
     ]);
 
     if (error) throw error;
 
-    // Show popup
+    // Show popup with Print ID
     printIdText.textContent = printId;
     popup.classList.remove("hidden");
 
-    // When popup closed, start payment
     closePopupBtn.onclick = async () => {
       popup.classList.add("hidden");
       await startPaymongoCheckout(printId, amount);
@@ -128,7 +133,7 @@ uploadPayBtn.addEventListener("click", async () => {
   }
 });
 
-// ====== PAYMONGO CHECKOUT ======
+// ========== PAYMONGO CHECKOUT ==========
 async function startPaymongoCheckout(printId, amount) {
   try {
     const res = await fetch("https://api.paymongo.com/v1/checkout_sessions", {
@@ -140,7 +145,6 @@ async function startPaymongoCheckout(printId, amount) {
       body: JSON.stringify({
         data: {
           attributes: {
-            description: `Print Order ${printId}`,
             line_items: [
               {
                 name: `Print Order ${printId}`,
@@ -150,6 +154,7 @@ async function startPaymongoCheckout(printId, amount) {
               },
             ],
             payment_method_types: ["gcash", "paymaya"],
+            description: printId,
             success_url: window.location.origin,
             cancel_url: window.location.origin,
           },
@@ -167,39 +172,80 @@ async function startPaymongoCheckout(printId, amount) {
   }
 }
 
-// ====== COPY BUTTON ======
+// ========== COPY BUTTON ==========
 copyBtn.addEventListener("click", () => {
   navigator.clipboard.writeText(printIdText.textContent);
   alert("Print ID copied!");
 });
 
-// ====== CHECK STATUS ======
+// ========== CHECK STATUS ==========
 checkStatusBtn.addEventListener("click", async () => {
   const printId = statusPrintId.value.trim();
-  if (!printId) return alert("Please enter a valid Print ID.");
+  if (!printId) {
+    alert("Please enter a Print ID.");
+    return;
+  }
+
   statusResult.textContent = "Checking status...";
 
   try {
-    const { data, error } = await supabase
+    // Find the print record first
+    const { data: prints, error: findErr } = await supabase
       .from("prints")
-      .select("name, payment_stat, print_status, print_code")
+      .select("*")
       .eq("print_id", printId)
-      .maybeSingle();
+      .limit(1);
 
-    if (error) throw error;
-    if (!data) {
+    if (findErr) throw findErr;
+    if (!prints || prints.length === 0) {
       statusResult.textContent = "No record found for this Print ID.";
       return;
     }
 
-    const { name, payment_stat, print_status, print_code } = data;
-    statusResult.innerHTML = `
-      🧾 <strong>Print Code:</strong> ${print_code}<br>
-      💰 <strong>Payment:</strong> ${payment_stat}<br>
-      🖨️ <strong>Status:</strong> ${print_status}
-    `;
+    const print = prints[0];
+
+    // Try to find matching payment in PayMongo
+    const res = await fetch("https://api.paymongo.com/v1/payments", {
+      headers: { Authorization: `Basic ${btoa(PAYMONGO_SECRET + ":")}` },
+    });
+    const paymentsData = await res.json();
+
+    const payment = paymentsData.data.find((p) =>
+      p.attributes.description?.includes(printId)
+    );
+
+    if (payment) {
+      const status = payment.attributes.status;
+      let payStat = "Unpaid";
+      let printStat = "Pending";
+
+      if (status === "paid") {
+        payStat = "Paid";
+        printStat = "Approved";
+      } else if (status === "failed") {
+        payStat = "Unpaid";
+        printStat = "Rejected";
+      }
+
+      // Update Supabase record
+      await supabase
+        .from("prints")
+        .update({
+          payment_stat: payStat,
+          print_status: printStat,
+        })
+        .eq("print_id", printId);
+
+      statusResult.innerHTML = `
+        ✅ <b>${print.print_code}</b><br>
+        Payment: ${payStat}<br>
+        Print Status: ${printStat}
+      `;
+    } else {
+      statusResult.textContent = "No payment found for this Print ID.";
+    }
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error checking status:", err);
     statusResult.textContent = "Error checking status.";
   }
 });
