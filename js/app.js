@@ -106,7 +106,7 @@ copyBtn.addEventListener("click", () => {
   alert("Print ID copied!");
 });
 
-// Checkout
+// ✅ Checkout with debugging
 async function startCheckout(print_id, amount) {
   try {
     console.log("🧾 Sending checkout request:", { print_id, amount });
@@ -122,29 +122,36 @@ async function startCheckout(print_id, amount) {
       body: JSON.stringify({ print_id, amount }),
     });
 
-    const text = await res.text(); // read raw response for better error checking
+    // 🪲 Debugging line to inspect response
+    const text = await res.text();
+    console.log("🔍 createCheckout raw response:", text);
+
     let data;
     try {
       data = JSON.parse(text);
-    } catch {
-      console.error("Invalid JSON from server:", text);
-      throw new Error("Server returned invalid JSON");
+    } catch (e) {
+      console.error("⚠️ Response is not valid JSON:", e, text);
+      alert("Network error — invalid response from server.");
+      return;
     }
 
     if (!res.ok) {
-      console.error("Checkout failed:", data);
-      throw new Error(data.error || "Failed to create checkout");
+      console.error("❌ Checkout failed:", data);
+      alert("Network error — please check your connection and try again.");
+      return;
     }
 
     if (!data.checkout_url) {
-      console.error("❌ No checkout_url in response:", data);
-      throw new Error("No checkout URL from PayMongo");
+      console.error("🚫 No checkout_url in response:", data);
+      alert("Payment session could not be created.");
+      return;
     }
 
-    console.log("✅ Redirecting to PayMongo checkout:", data.checkout_url);
+    console.log("✅ Redirecting to:", data.checkout_url);
     window.location.href = data.checkout_url;
+
   } catch (err) {
-    console.error("❌ Error starting checkout:", err);
+    console.error("💥 Error starting checkout:", err);
     alert("Network error — please check your connection and try again.");
   }
 }
