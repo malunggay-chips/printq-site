@@ -106,10 +106,11 @@ copyBtn.addEventListener("click", () => {
   alert("Print ID copied!");
 });
 
-// ✅ Checkout with debugging
+// Checkout
 async function startCheckout(print_id, amount) {
+  const debugEl = document.getElementById("debugOutput");
   try {
-    console.log("🧾 Sending checkout request:", { print_id, amount });
+    debugEl.textContent = `🧾 Sending checkout request...\nprint_id: ${print_id}\namount: ${amount}`;
 
     const res = await fetch(`${API_BASE}/createCheckout`, {
       method: "POST",
@@ -122,36 +123,31 @@ async function startCheckout(print_id, amount) {
       body: JSON.stringify({ print_id, amount }),
     });
 
-    // 🪲 Debugging line to inspect response
     const text = await res.text();
-    console.log("🔍 createCheckout raw response:", text);
+    debugEl.textContent += `\n🔍 Raw response:\n${text}`;
 
     let data;
     try {
       data = JSON.parse(text);
-    } catch (e) {
-      console.error("⚠️ Response is not valid JSON:", e, text);
-      alert("Network error — invalid response from server.");
-      return;
+    } catch {
+      debugEl.textContent += "\n❌ Invalid JSON returned from server.";
+      throw new Error("Server returned invalid JSON");
     }
 
     if (!res.ok) {
-      console.error("❌ Checkout failed:", data);
-      alert("Network error — please check your connection and try again.");
-      return;
+      debugEl.textContent += `\n❌ Checkout failed:\n${JSON.stringify(data, null, 2)}`;
+      throw new Error(data.error || "Failed to create checkout");
     }
 
     if (!data.checkout_url) {
-      console.error("🚫 No checkout_url in response:", data);
-      alert("Payment session could not be created.");
-      return;
+      debugEl.textContent += `\n❌ No checkout_url in response:\n${JSON.stringify(data, null, 2)}`;
+      throw new Error("No checkout URL from PayMongo");
     }
 
-    console.log("✅ Redirecting to:", data.checkout_url);
+    debugEl.textContent += `\n✅ Redirecting to PayMongo checkout...`;
     window.location.href = data.checkout_url;
-
   } catch (err) {
-    console.error("💥 Error starting checkout:", err);
+    debugEl.textContent += `\n❌ Error starting checkout:\n${err.message}`;
     alert("Network error — please check your connection and try again.");
   }
 }
